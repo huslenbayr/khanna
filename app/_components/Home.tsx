@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { Map, AlertTriangle, Users, Camera, Activity, BookOpen, Globe2 } from 'lucide-react'
-import heroImg from '../assets/hero.png'
+import heroImg from '@/assets/hero.png'
 
 const Home = () => {
   return (
@@ -16,20 +16,21 @@ const Home = () => {
           </p>
 
           <div className="hero-ctas">
-            <Link href="/naadam"><button className="cta-primary">Наадмын мэдээлэл харах</button></Link>
-            <Link href="/dashboard"><button className="cta-ghost">Dashboard нээх</button></Link>
+            <Link href="/dashboard" className="no-underline">
+              <button className="cta-primary">Dashboard нээх</button>
+            </Link>
           </div>
 
           <div className="feature-inline">
             <div><Globe2 size={18} /> MN + EN guide</div>
             <div><Map size={18} /> 3D map</div>
-            <div><Users size={18} /> Team tracker</div>
+            <div><Users size={18} /> Community feed</div>
           </div>
         </div>
 
         <div className="hero-right">
           <div className="mock-device glass-panel">
-            <img src={heroImg.src} alt="hero" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }} />
+            <img src={heroImg.src} alt="hero" className="w-full h-full object-cover rounded-xl" />
           </div>
         </div>
       </section>
@@ -40,13 +41,12 @@ const Home = () => {
           <Card icon={<BookOpen />} title="Naadam Visitor Guide">Монгол/Англи тайлбар, соёлын зөвлөмж, тэмцээний мэдээллийг category-аар оруулна.</Card>
           <Card icon={<Map />} title="3D Map & POIs">Цэнгэлдэх орчим, хаалга, тусламжийн цэг, hot zone-уудыг газрын зураг дээр харуулна.</Card>
           <Card icon={<AlertTriangle />} title="Incident Reports">Дэд бүтэц, crowd control, аюулгүй байдлын тайланг urgency level-ээр ангилна.</Card>
-          <Card icon={<Users />} title="Team Tracker">Хариуцсан баг, ахлагч, утас, байршил, төлөвийг хурдан нэмнэ.</Card>
-          <Card icon={<Camera />} title="Social Video Requests">Instagram/Facebook video link, quote, location, notes оруулж шалгах queue үүсгэнэ.</Card>
+          <Card icon={<Camera />} title="Зураг & Видео Feed">Хэн ч зураг, видео оруулж хүмүүстэй хуваалцана.</Card>
           <Card icon={<Activity />} title="Hot Zones">Зочдын бөөгнөрөл, эрсдэлтэй хэсгийг real-time хянахад бэлэн.</Card>
         </div>
       </section>
 
-      <footer style={{ padding: '2rem 3rem', color: 'var(--text-muted)' }}>
+      <footer className="px-12 py-8 text-[var(--text-muted)]">
         Built for Naadam visitor information • Монгол + English • Live event command center
       </footer>
     </div>

@@ -1,11 +1,21 @@
 import 'maplibre-gl/dist/maplibre-gl.css'
-import '../src/index.css'
+import './globals.css'
 import type { ReactNode } from 'react'
-import SiteShell from '../src/components/SiteShell'
+import SiteShell from '@/components/SiteShell'
+
+import type { Viewport } from 'next'
 
 export const metadata = {
   title: 'KhannaWay',
-  description: 'Naadam visitor guide and live event command center'
+  description: 'Naadam visitor guide and live event command center',
+}
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
 }
 
 type RootLayoutProps = {

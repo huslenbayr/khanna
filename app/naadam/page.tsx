@@ -1,5 +1,5 @@
-import NaadamInfo from '../../src/components/NaadamInfo'
+import { redirect } from 'next/navigation'
 
 export default function NaadamPage() {
-  return <NaadamInfo variant="page" />
+  redirect('/dashboard')
 }
