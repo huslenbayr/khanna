@@ -2,7 +2,7 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ImagePlus, LayoutGrid, Map, User } from 'lucide-react'
+import { ImagePlus, LayoutGrid, Map, Search, User } from 'lucide-react'
 import MapComponent, { type MapHandle } from './MapComponent'
 import Feed, { type FeedHandle } from './Feed'
 import UploadModal from './UploadModal'
@@ -59,6 +59,11 @@ export default function DashboardShell() {
         <button className="nav-btn" onClick={() => feedRef.current?.close()}>
           <Map size={22} />
           <span>Газрын зураг</span>
+        </button>
+
+        <button className="nav-btn" onClick={() => router.push('/search')}>
+          <Search size={22} />
+          <span>Хайх</span>
         </button>
 
         <button className="nav-btn" onClick={() => router.push(user ? `/profile/${user.id}` : '/auth')}>

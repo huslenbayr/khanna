@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { LogOut, User } from 'lucide-react'
+import { usePathname, useRouter } from 'next/navigation'
+import { LogOut, Search, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/auth-context'
 
 export default function Header() {
   const pathname = usePathname()
+  const router   = useRouter()
   const { user, avatarUrl } = useAuth()
 
   const handleLogout = async () => {
@@ -42,6 +43,14 @@ export default function Header() {
       </nav>
 
       <div className="flex items-center gap-2">
+        <button
+          className="glass-button"
+          style={{ padding: '0.5rem 0.6rem' }}
+          onClick={() => router.push('/search')}
+          aria-label="Хайх"
+        >
+          <Search size={15} />
+        </button>
         {user ? (
           <>
             <Link
