@@ -10,8 +10,10 @@
     "start": "next start"
   },
   "dependencies": {
+    "firebase": "^12.13.0",
     "lucide-react": "^1.14.0",
     "maplibre-gl": "^5.24.0",
+    "mongoose": "^9.6.1",
     "next": "^16.2.6",
     "react": "^19.2.5",
     "react-dom": "^19.2.5"

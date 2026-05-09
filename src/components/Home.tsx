@@ -9,14 +9,14 @@ const Home = () => {
       <section className="home-hero glass-panel">
         <div className="hero-left">
           <h1>
-            KhannaWay — <span className="neon">Naadam Visitor Guide</span>
+            KhannaWay — <span className="neon">Ulaanbaatar City Ops</span>
           </h1>
           <p className="hero-desc">
-            Наадамд ирж буй Монгол болон гадаад зочдод зориулсан мэдээлэл, 3D map, багийн зохион байгуулалт, сошиал видео хүсэлт, аюулгүй байдлын хяналтыг нэг дор харуулна.
+            Улаанбаатарын зам, үйлчилгээ, багийн зохион байгуулалт, хотын видео мэдээлэл, аюулгүй байдлын хяналтыг нэг 3D map дээр нэгтгэнэ.
           </p>
 
           <div className="hero-ctas">
-            <Link href="/naadam"><button className="cta-primary">Наадмын мэдээлэл харах</button></Link>
+            <Link href="/city"><button className="cta-primary">Хотын мэдээлэл харах</button></Link>
             <Link href="/dashboard"><button className="cta-ghost">Dashboard нээх</button></Link>
           </div>
 
@@ -35,19 +35,19 @@ const Home = () => {
       </section>
 
       <section className="home-features">
-        <h2>Гадаад зочдод зориулсан үндсэн боломжууд</h2>
+        <h2>Улаанбаатар хотын үндсэн боломжууд</h2>
         <div className="features-grid">
-          <Card icon={<BookOpen />} title="Naadam Visitor Guide">Монгол/Англи тайлбар, соёлын зөвлөмж, тэмцээний мэдээллийг category-аар оруулна.</Card>
-          <Card icon={<Map />} title="3D Map & POIs">Цэнгэлдэх орчим, хаалга, тусламжийн цэг, hot zone-уудыг газрын зураг дээр харуулна.</Card>
+          <Card icon={<BookOpen />} title="UB City Guide">Монгол/Англи тайлбар, үйлчилгээний зөвлөмж, дүүргийн мэдээллийг category-аар оруулна.</Card>
+          <Card icon={<Map />} title="3D Map & POIs">Улаанбаатарын дүүрэг, тусламжийн цэг, эрсдэлтэй бүсүүдийг газрын зураг дээр харуулна.</Card>
           <Card icon={<AlertTriangle />} title="Incident Reports">Дэд бүтэц, crowd control, аюулгүй байдлын тайланг urgency level-ээр ангилна.</Card>
           <Card icon={<Users />} title="Team Tracker">Хариуцсан баг, ахлагч, утас, байршил, төлөвийг хурдан нэмнэ.</Card>
-          <Card icon={<Camera />} title="Social Video Requests">Instagram/Facebook video link, quote, location, notes оруулж шалгах queue үүсгэнэ.</Card>
+          <Card icon={<Camera />} title="Citizen Media Reports">Иргэд зураг/бичлэг хавсаргаж байршилтай report үүсгэнэ.</Card>
           <Card icon={<Activity />} title="Hot Zones">Зочдын бөөгнөрөл, эрсдэлтэй хэсгийг real-time хянахад бэлэн.</Card>
         </div>
       </section>
 
       <footer style={{ padding: '2rem 3rem', color: 'var(--text-muted)' }}>
-        Built for Naadam visitor information • Монгол + English • Live event command center
+        Built for Ulaanbaatar city operations • Монгол + English • Live command center
       </footer>
     </div>
   )

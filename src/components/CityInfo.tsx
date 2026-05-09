@@ -5,18 +5,18 @@ import type { LucideIcon } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { BookOpen, CalendarDays, Globe2, Info, MapPin, Plus, ShieldCheck, Trash2 } from 'lucide-react'
 
-const STORAGE_KEY = 'khannaway-naadam-info-v1'
+const STORAGE_KEY = 'khannaway-city-info-v1'
 
-const categories = ['Бүгд', 'Ерөнхий', 'Хөтөлбөр', 'Тэмцээн', 'Зочны зөвлөмж', 'Аюулгүй байдал', 'Тээвэр'] as const
+const categories = ['Бүгд', 'Ерөнхий', 'Хөдөлгөөн', 'Дүүрэг', 'Зочны зөвлөмж', 'Аюулгүй байдал', 'Тээвэр'] as const
 
 type InfoCategory = (typeof categories)[number]
-type NaadamCategory = Exclude<InfoCategory, 'Бүгд'>
+type CityCategory = Exclude<InfoCategory, 'Бүгд'>
 type LanguageFilter = 'both' | 'mn' | 'en'
-type NaadamInfoVariant = 'overlay' | 'page'
+type CityInfoVariant = 'overlay' | 'page'
 
-type NaadamInfoItem = {
+type CityInfoItem = {
   id: number
-  category: NaadamCategory
+  category: CityCategory
   audience: string
   location: string
   titleMn: string
@@ -27,46 +27,46 @@ type NaadamInfoItem = {
   tipEn: string
 }
 
-type NaadamInfoForm = Omit<NaadamInfoItem, 'id'>
+type CityInfoForm = Omit<CityInfoItem, 'id'>
 
-type NaadamInfoProps = {
-  variant?: NaadamInfoVariant
+type CityInfoProps = {
+  variant?: CityInfoVariant
 }
 
-const initialInfo: NaadamInfoItem[] = [
+const initialInfo: CityInfoItem[] = [
   {
     id: 1,
     category: 'Ерөнхий',
-    audience: 'Гадаад зочид',
+    audience: 'Иргэд ба зочид',
     location: 'Улаанбаатар',
-    titleMn: 'Наадам гэж юу вэ?',
-    titleEn: 'What is Naadam?',
-    bodyMn: 'Наадам бол Монголын үндэсний их баяр бөгөөд бөх, хурдан морь, сур харваа зэрэг уламжлалт тэмцээнүүдээр дамжуулан түүх, соёлоо харуулдаг.',
-    bodyEn: 'Naadam is Mongolia’s national festival, celebrating history and culture through traditional competitions such as wrestling, horse racing, and archery.',
-    tipMn: 'Жилийн албан ёсны цагийн хуваарийг зохион байгуулагчийн мэдэгдлээр шинэчилнэ.',
-    tipEn: 'Update the exact yearly schedule once the official program is published.'
+    titleMn: 'Улаанбаатар хотын шуурхай мэдээлэл',
+    titleEn: 'Ulaanbaatar city operations',
+    bodyMn: 'Замын хөдөлгөөн, үйлчилгээ, аюулгүй байдал, багийн зохион байгуулалтын мэдээллийг нэг хотын зураглал дээр нэгтгэн харуулна.',
+    bodyEn: 'Traffic, services, safety, and field-team coordination are unified on one city-wide operations map.',
+    tipMn: 'Дүүрэг бүрийн мэдээллийг богино, баталгаатай, шинэчлэгдсэн байдлаар оруул.',
+    tipEn: 'Keep each district update short, verified, and current.'
   },
   {
     id: 2,
-    category: 'Тэмцээн',
-    audience: 'Анх удаа ирж буй зочид',
-    location: 'Төв цэнгэлдэх',
-    titleMn: 'Эрийн гурван наадам',
-    titleEn: 'The Three Manly Games',
-    bodyMn: 'Үндсэн төрлүүд нь үндэсний бөх, хурдан морины уралдаан, сур харваа. Мөн шагайн харваа зэрэг соёлын нэмэлт үзүүлбэрүүд байдаг.',
-    bodyEn: 'The core events are Mongolian wrestling, horse racing, and archery. Visitors may also see ankle-bone shooting and other cultural showcases.',
-    tipMn: 'Тэмцээний талбай бүрийн орох, гарах чиглэлийг map дээр тодорхой тэмдэглэ.',
-    tipEn: 'Mark entrances, exits, and event areas clearly on the map.'
+    category: 'Хөдөлгөөн',
+    audience: 'Иргэд ба зочид',
+    location: 'Сүхбаатар дүүрэг',
+    titleMn: 'Төвийн хөдөлгөөн',
+    titleEn: 'Central traffic flow',
+    bodyMn: 'Төвийн уулзварууд, автобусны буудал, явган хүний нягтралтай хэсгийг real-time тэмдэглэлээр хянаж болно.',
+    bodyEn: 'Central junctions, bus stops, and pedestrian-density areas can be tracked with real-time notes.',
+    tipMn: 'Замын ачаалал, хаалт, чиглэл өөрчлөлтийг map дээр тодорхой тэмдэглэ.',
+    tipEn: 'Mark congestion, closures, and reroutes clearly on the map.'
   },
   {
     id: 3,
     category: 'Зочны зөвлөмж',
-    audience: 'Гадаад зочид',
-    location: 'Цэнгэлдэх орчим',
-    titleMn: 'Зочдод зориулсан соёлын зөвлөмж',
-    titleEn: 'Visitor Etiquette',
-    bodyMn: 'Зураг авахдаа хүмүүсээс зөвшөөрөл асуух, морь болон уралдааны бүсэд хэт ойртохгүй байх, хог хаяхгүй байх нь чухал.',
-    bodyEn: 'Ask before taking close-up photos of people, keep a safe distance from horses and race areas, and avoid littering.',
+    audience: 'Иргэд ба зочид',
+    location: 'Чингэлтэй дүүрэг',
+    titleMn: 'Иргэд, зочдод зориулсан зөвлөмж',
+    titleEn: 'Resident and visitor guidance',
+    bodyMn: 'Тээврийн өөрчлөлт, үйлчилгээний цагийн хуваарь, олон хүнтэй хэсгийн мэдээллийг ойлгомжтой хэлбэрээр шинэчилнэ.',
+    bodyEn: 'Transport changes, service hours, and crowded-area updates are kept clear and easy to scan.',
     tipMn: 'Богино, ойлгомжтой signage-г Монгол/Англи хоёр хэлээр байрлуул.',
     tipEn: 'Use short bilingual signs in Mongolian and English.'
   },
@@ -74,7 +74,7 @@ const initialInfo: NaadamInfoItem[] = [
     id: 4,
     category: 'Аюулгүй байдал',
     audience: 'Бүх зочид',
-    location: 'Хаалга, хүнсний хэсэг, суудлын бүс',
+    location: 'Гол уулзвар, худалдааны төв, үйлчилгээний бүс',
     titleMn: 'Аюулгүй байдлын мэдээлэл',
     titleEn: 'Safety Information',
     bodyMn: 'Хүүхэд, ахмад настан, гадаад зочид төөрөх эрсдэлтэй хэсгүүдэд тусламжийн цэг, эмнэлгийн баг, мэдээллийн ажилтныг тодорхой тэмдэглэ.',
@@ -85,20 +85,20 @@ const initialInfo: NaadamInfoItem[] = [
   {
     id: 5,
     category: 'Ерөнхий',
-    audience: 'Гадаад зочид',
-    location: 'Төв хаалга',
-    titleMn: 'Жуулчны мэдээллийн цэг',
-    titleEn: 'Tourist Information Point',
-    bodyMn: 'Гадаад зочид газрын зураг, хөтөлбөр, тусламжийн мэдээллийг эндээс авна.',
-    bodyEn: 'Foreign visitors can get maps, program updates, and help information here.',
-    tipMn: 'Англи хэлтэй ажилтан байрлуулах.',
-    tipEn: 'Assign English-speaking staff here.'
+    audience: 'Иргэд ба зочид',
+    location: 'Сүхбаатарын талбай',
+    titleMn: 'Хотын мэдээллийн цэг',
+    titleEn: 'City Information Point',
+    bodyMn: 'Иргэд болон зочид газрын зураг, үйлчилгээ, тусламжийн мэдээллийг эндээс авна.',
+    bodyEn: 'Residents and visitors can get maps, service updates, and help information here.',
+    tipMn: 'Англи хэлтэй ажилтан болон QR мэдээлэл байрлуулах.',
+    tipEn: 'Assign English-speaking staff and QR information here.'
   }
 ]
 
-const emptyForm: NaadamInfoForm = {
+const emptyForm: CityInfoForm = {
   category: 'Ерөнхий',
-  audience: 'Гадаад зочид',
+  audience: 'Иргэд ба зочид',
   location: '',
   titleMn: '',
   titleEn: '',
@@ -125,27 +125,27 @@ const labelStyle: CSSProperties = {
   color: 'var(--text-muted)'
 }
 
-const iconByCategory: Record<NaadamCategory, LucideIcon> = {
+const iconByCategory: Record<CityCategory, LucideIcon> = {
   Ерөнхий: Info,
-  Хөтөлбөр: CalendarDays,
-  Тэмцээн: ShieldCheck,
+  Хөдөлгөөн: MapPin,
+  Дүүрэг: CalendarDays,
   'Зочны зөвлөмж': Globe2,
   'Аюулгүй байдал': ShieldCheck,
   Тээвэр: MapPin
 }
 
-const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
+const CityInfo = ({ variant = 'overlay' }: CityInfoProps) => {
   const [language, setLanguage] = useState<LanguageFilter>('both')
   const [activeCategory, setActiveCategory] = useState<InfoCategory>('Бүгд')
   const [showForm, setShowForm] = useState(true)
-  const [form, setForm] = useState<NaadamInfoForm>(emptyForm)
-  const [items, setItems] = useState<NaadamInfoItem[]>(initialInfo)
+  const [form, setForm] = useState<CityInfoForm>(emptyForm)
+  const [items, setItems] = useState<CityInfoItem[]>(initialInfo)
   const [storageReady, setStorageReady] = useState(false)
 
   useEffect(() => {
     try {
       const savedRaw = localStorage.getItem(STORAGE_KEY)
-      const saved = savedRaw ? JSON.parse(savedRaw) as NaadamInfoItem[] : null
+      const saved = savedRaw ? JSON.parse(savedRaw) as CityInfoItem[] : null
       if (Array.isArray(saved) && saved.length > 0) {
         setItems(saved)
       }
@@ -166,7 +166,7 @@ const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
     activeCategory === 'Бүгд' ? items : items.filter(item => item.category === activeCategory)
   ), [activeCategory, items])
 
-  const updateForm = (field: keyof NaadamInfoForm, value: string) => {
+  const updateForm = (field: keyof CityInfoForm, value: string) => {
     setForm(current => ({ ...current, [field]: value }))
   }
 
@@ -217,7 +217,7 @@ const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
       }
 
   return (
-    <div className={variant === 'page' ? 'naadam-info-page' : 'glass-panel overlay-panel animate-fade-in'} style={shellStyle}>
+    <div className={variant === 'page' ? 'city-info-page' : 'glass-panel overlay-panel animate-fade-in'} style={shellStyle}>
       <div className={variant === 'page' ? 'glass-panel' : undefined} style={{
         padding: variant === 'page' ? '1.25rem' : 0,
         display: 'grid',
@@ -228,10 +228,10 @@ const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '1rem' }}>
           <div>
             <h2 style={{ fontSize: variant === 'page' ? '1.65rem' : '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <BookOpen size={variant === 'page' ? 28 : 23} color="var(--primary)" /> Наадмын мэдээлэл
+              <BookOpen size={variant === 'page' ? 28 : 23} color="var(--primary)" /> Хотын мэдээлэл
             </h2>
             <p style={{ marginTop: '0.35rem', color: 'var(--text-muted)', fontSize: '0.84rem', lineHeight: 1.5 }}>
-              Гадаад зочдод зориулсан Монгол/Англи тайлбар, соёлын зөвлөмж, аюулгүй байдлын мэдээлэл.
+              Улаанбаатарын дүүрэг, үйлчилгээ, аюулгүй байдал, замын мэдээллийг Монгол/Англи хэлээр нэгтгэнэ.
             </p>
           </div>
           <button className="glass-button" onClick={() => setShowForm(current => !current)} style={{ padding: '0.55rem 0.65rem' }}>
@@ -278,7 +278,7 @@ const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
             <label style={labelStyle}>
               Ангилал
               <select value={form.category} onChange={(event) => updateForm('category', event.target.value)} style={fieldStyle}>
-                {categories.filter((category): category is NaadamCategory => category !== 'Бүгд').map(category => <option key={category}>{category}</option>)}
+                {categories.filter((category): category is CityCategory => category !== 'Бүгд').map(category => <option key={category}>{category}</option>)}
               </select>
             </label>
             <label style={labelStyle}>
@@ -287,18 +287,18 @@ const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
             </label>
             <label style={labelStyle}>
               Байршил
-              <input value={form.location} onChange={(event) => updateForm('location', event.target.value)} placeholder="Төв цэнгэлдэх" style={fieldStyle} />
+              <input value={form.location} onChange={(event) => updateForm('location', event.target.value)} placeholder="Сүхбаатарын талбай" style={fieldStyle} />
             </label>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
             <label style={labelStyle}>
               Гарчиг MN
-              <input value={form.titleMn} onChange={(event) => updateForm('titleMn', event.target.value)} placeholder="Жишээ: Нээлтийн ёслол" style={fieldStyle} />
+              <input value={form.titleMn} onChange={(event) => updateForm('titleMn', event.target.value)} placeholder="Жишээ: Замын ачаалал" style={fieldStyle} />
             </label>
             <label style={labelStyle}>
               Title EN
-              <input value={form.titleEn} onChange={(event) => updateForm('titleEn', event.target.value)} placeholder="Example: Opening Ceremony" style={fieldStyle} />
+              <input value={form.titleEn} onChange={(event) => updateForm('titleEn', event.target.value)} placeholder="Example: Traffic update" style={fieldStyle} />
             </label>
           </div>
 
@@ -402,4 +402,4 @@ const NaadamInfo = ({ variant = 'overlay' }: NaadamInfoProps) => {
   )
 }
 
-export default NaadamInfo
+export default CityInfo

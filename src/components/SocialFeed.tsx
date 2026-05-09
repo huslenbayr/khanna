@@ -1,328 +1,553 @@
 'use client'
 
 import type { CSSProperties, FormEvent } from 'react'
-import { useEffect, useMemo, useState } from 'react'
-import { Camera, ExternalLink, FileVideo, Heart, Link as LinkIcon, MapPin, ShieldCheck, Trash2, Upload } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Bell, CheckCircle2, Crosshair, ImagePlus, Loader2, MapPin, MessageSquare, Send, X } from 'lucide-react'
+import type { CitizenReport, ReportCategory, ReportCoordinates, ReportMedia, ReportStatus } from '../types/citizenReport'
+import { reportCategories, reportStatuses } from '../types/citizenReport'
 
-const STORAGE_KEY = 'khannaway-social-video-queue-v2'
-
-type Platform = 'Instagram' | 'Facebook' | 'TikTok' | 'Бусад'
-type Priority = 'Бага' | 'Дунд' | 'Өндөр'
-type ReviewStatus = 'Шалгах' | 'Шалгасан'
-
-type SocialPost = {
-  id: number
-  user: string
-  time: string
-  content: string
-  image?: string
-  location: string
+type CitizenReportPanelProps = {
+  reports: CitizenReport[]
+  currentLocation: ReportCoordinates | null
+  selectedReport: CitizenReport | null
+  createdBy: string
+  onCurrentLocationChange: (point: ReportCoordinates) => void
+  onAddReport: (report: CitizenReport) => void
+  onSelectReport: (reportId: string | null) => void
 }
 
-type SocialVideoForm = {
-  platform: Platform
-  url: string
-  handle: string
-  location: string
-  priority: Priority
-  quote: string
-  notes: string
+type ReportForm = {
+  category: ReportCategory
+  description: string
+  district: string
+  locationText: string
+  comments: string
+  status: ReportStatus
 }
 
-type SocialVideoItem = {
-  id: number
-  platform: Platform
-  sourceUrl: string
-  handle: string
-  location: string
-  priority: Priority
-  quote: string
-  notes: string
-  videoUrl: string
-  fileName: string
-  status: ReviewStatus
+const emptyForm: ReportForm = {
+  category: 'Мөстсөн / халтиргаатай хэсэг',
+  description: '',
+  district: '',
+  locationText: '',
+  comments: '',
+  status: 'Received',
 }
 
-const initialPosts: SocialPost[] = [
-  {
-    id: 1,
-    user: '@NaadamFan',
-    time: 'Дөнгөж сая',
-    content: 'Бөхийн финал эхлэх гэж байна. Төв талбайн уур амьсгал маш өндөр байна.',
-    image: 'https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?ixlib=rb-4.0.3&auto=format&fit=crop&w=800&q=80',
-    location: 'Төв талбай'
-  },
-  {
-    id: 2,
-    user: '@TravelNomad',
-    time: '15 минутын өмнө',
-    content: 'Зүүн хаалганы ойролцоо хүнсний цэг дээр ачаалал нэмэгдэж байна.',
-    location: 'Хоолны хэсэг A'
-  }
-]
-
-const emptyForm: SocialVideoForm = {
-  platform: 'Instagram',
-  url: '',
-  handle: '',
-  location: '',
-  priority: 'Дунд',
-  quote: '',
-  notes: ''
+const statusLabels: Record<ReportStatus, string> = {
+  Received: 'Хүлээн авсан',
+  Verified: 'Баталгаажсан',
+  'In Progress': 'Шийдвэрлэж байна',
+  Resolved: 'Шийдвэрлэсэн',
 }
 
 const fieldStyle: CSSProperties = {
   width: '100%',
-  padding: '0.65rem 0.75rem',
+  padding: '0.72rem 0.78rem',
   borderRadius: 8,
   border: '1px solid var(--border-glass)',
   background: 'rgba(255, 255, 255, 0.06)',
   color: 'var(--text-main)',
-  fontFamily: 'inherit'
+  fontFamily: 'inherit',
+  outline: 'none',
 }
 
 const labelStyle: CSSProperties = {
   display: 'grid',
   gap: '0.35rem',
   fontSize: '0.76rem',
-  color: 'var(--text-muted)'
+  color: 'var(--text-muted)',
 }
 
-const getPlatformFromUrl = (url: string, fallback: Platform): Platform => {
-  const normalized = url.toLowerCase()
-  if (normalized.includes('instagram.com')) return 'Instagram'
-  if (normalized.includes('facebook.com') || normalized.includes('fb.watch')) return 'Facebook'
-  if (normalized.includes('tiktok.com')) return 'TikTok'
-  return fallback
+const getMediaType = (file: File): ReportMedia['type'] => (
+  file.type.startsWith('video/') ? 'video' : 'image'
+)
+
+const formatCreatedAt = (value: string) => (
+  new Intl.DateTimeFormat('mn-MN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+)
+
+const getDistanceMeters = (from: ReportCoordinates, to: ReportCoordinates) => {
+  const earthRadiusMeters = 6371000
+  const toRadians = (value: number) => (value * Math.PI) / 180
+  const deltaLat = toRadians(to.lat - from.lat)
+  const deltaLng = toRadians(to.lng - from.lng)
+  const fromLat = toRadians(from.lat)
+  const toLat = toRadians(to.lat)
+
+  const haversine =
+    Math.sin(deltaLat / 2) ** 2 +
+    Math.cos(fromLat) * Math.cos(toLat) * Math.sin(deltaLng / 2) ** 2
+
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine))
 }
 
-const SocialFeed = () => {
-  const [posts] = useState(initialPosts)
-  const [form, setForm] = useState<SocialVideoForm>(emptyForm)
-  const [videoFile, setVideoFile] = useState<File | null>(null)
-  const [queue, setQueue] = useState<SocialVideoItem[]>([])
-  const [storageReady, setStorageReady] = useState(false)
+const formatDistance = (meters?: number) => {
+  if (meters === undefined) return ''
+  if (meters < 1000) return `${Math.round(meters)} м`
+  return `${(meters / 1000).toFixed(1)} км`
+}
 
-  useEffect(() => {
-    try {
-      const savedRaw = localStorage.getItem(STORAGE_KEY)
-      const savedQueue = savedRaw ? JSON.parse(savedRaw) as SocialVideoItem[] : null
-      if (Array.isArray(savedQueue)) {
-        setQueue(savedQueue)
-      }
-    } catch {
-      setQueue([])
-    }
+const CitizenReportPanel = ({
+  reports,
+  currentLocation,
+  selectedReport,
+  createdBy,
+  onCurrentLocationChange,
+  onAddReport,
+  onSelectReport,
+}: CitizenReportPanelProps) => {
+  const [form, setForm] = useState<ReportForm>(emptyForm)
+  const [mediaFiles, setMediaFiles] = useState<File[]>([])
+  const [mediaPreviews, setMediaPreviews] = useState<ReportMedia[]>([])
+  const [successMessage, setSuccessMessage] = useState('')
+  const [locationStatus, setLocationStatus] = useState('')
+  const [locationError, setLocationError] = useState('')
+  const [locationLoading, setLocationLoading] = useState(false)
+  const [nearbyOpen, setNearbyOpen] = useState(false)
 
-    setStorageReady(true)
-  }, [])
+  const reportSummary = useMemo(() => {
+    const active = reports.filter(report => report.status !== 'Resolved').length
+    const resolved = reports.length - active
+    return { active, resolved }
+  }, [reports])
 
-  useEffect(() => {
-    if (!storageReady) return
-
-    const persistentQueue = queue.map(item => ({
-      ...item,
-      videoUrl: '',
-      fileName: item.fileName || ''
+  const feedReports = useMemo(() => {
+    const reportsWithDistance = reports.map(report => ({
+      report,
+      distanceMeters: currentLocation ? getDistanceMeters(currentLocation, report.coordinates) : undefined,
     }))
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(persistentQueue))
-  }, [queue, storageReady])
 
-  const intakeStats = useMemo(() => {
-    const highPriority = queue.filter(item => item.priority === 'Өндөр').length
-    const uploaded = queue.filter(item => item.videoUrl).length
-    return { highPriority, uploaded }
-  }, [queue])
+    return reportsWithDistance.sort((a, b) => {
+      if (a.distanceMeters !== undefined && b.distanceMeters !== undefined) {
+        return a.distanceMeters - b.distanceMeters
+      }
 
-  const updateForm = <Field extends keyof SocialVideoForm>(field: Field, value: SocialVideoForm[Field]) => {
+      return new Date(b.report.createdAt).getTime() - new Date(a.report.createdAt).getTime()
+    })
+  }, [currentLocation, reports])
+
+  const nearbyReports = useMemo(() => (
+    feedReports
+      .filter(item => item.distanceMeters !== undefined && item.distanceMeters <= 2000)
+      .slice(0, 4)
+  ), [feedReports])
+
+  const updateForm = <Field extends keyof ReportForm>(field: Field, value: ReportForm[Field]) => {
     setForm(current => ({ ...current, [field]: value }))
   }
 
-  const addSocialVideo = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
+  const updateMediaFiles = (files: File[]) => {
+    mediaPreviews.forEach(media => URL.revokeObjectURL(media.url))
+    setMediaFiles(files)
+    setMediaPreviews(files.map(file => ({
+      type: getMediaType(file),
+      url: URL.createObjectURL(file),
+      fileName: file.name,
+    })))
+  }
 
-    const sourceUrl = form.url.trim()
-    const quote = form.quote.trim()
-    if (!sourceUrl && !videoFile && !quote) return
+  const requestCurrentLocation = () => {
+    setLocationStatus('')
+    setLocationError('')
 
-    const videoUrl = videoFile ? URL.createObjectURL(videoFile) : ''
-    const item: SocialVideoItem = {
-      id: Date.now(),
-      platform: getPlatformFromUrl(sourceUrl, form.platform),
-      sourceUrl,
-      handle: form.handle.trim() || '@unknown',
-      location: form.location.trim() || 'Байршил тодорхойгүй',
-      priority: form.priority,
-      quote: quote || 'Ишлэл оруулаагүй.',
-      notes: form.notes.trim() || 'Шалгах дараалалд нэмэгдсэн.',
-      videoUrl,
-      fileName: videoFile?.name || '',
-      status: 'Шалгах'
+    if (!navigator.geolocation) {
+      setLocationError('Таны browser байршил авах боломжгүй байна.')
+      return
     }
 
-    setQueue(current => [item, ...current])
+    setLocationLoading(true)
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        const nextLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        }
+        onCurrentLocationChange(nextLocation)
+        setLocationStatus('Таны байршлыг амжилттай авлаа.')
+        setNearbyOpen(true)
+        setLocationLoading(false)
+      },
+      error => {
+        const message = error.code === error.PERMISSION_DENIED
+          ? 'Байршлын зөвшөөрөл цуцлагдсан байна.'
+          : 'Байршил авахад алдаа гарлаа. Дахин оролдоно уу.'
+        setLocationError(message)
+        setLocationLoading(false)
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    )
+  }
+
+  const addReport = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    const description = form.description.trim()
+    const locationText = form.locationText.trim()
+    if (!description || !locationText) return
+
+    const media = mediaPreviews
+
+    const coordinates = currentLocation ?? {
+      lat: 47.9186,
+      lng: 106.9177,
+    }
+
+    const report: CitizenReport = {
+      id: `report-${Date.now()}`,
+      category: form.category,
+      description,
+      district: form.district.trim() || 'Дүүрэг сонгоогүй',
+      locationText,
+      coordinates,
+      media,
+      comments: form.comments.trim(),
+      status: form.status,
+      createdAt: new Date().toISOString(),
+      createdBy,
+    }
+
+    onAddReport(report)
+    onSelectReport(report.id)
     setForm(emptyForm)
-    setVideoFile(null)
+    setMediaFiles([])
+    setMediaPreviews([])
+    setSuccessMessage('Мэдээлэл амжилттай нэмэгдлээ')
     event.currentTarget.reset()
   }
 
-  const markReviewed = (id: number) => {
-    setQueue(current => current.map(item => (
-      item.id === id ? { ...item, status: item.status === 'Шалгасан' ? 'Шалгах' : 'Шалгасан' } : item
-    )))
-  }
-
-  const removeVideo = (id: number) => {
-    setQueue(current => current.filter(item => item.id !== id))
-  }
-
   return (
-    <div className="glass-panel overlay-panel animate-fade-in" style={{
-      top: '5.25rem', right: '2rem', width: '430px', maxHeight: '84vh', overflowY: 'auto', padding: '1.25rem',
-      display: 'flex', flexDirection: 'column', gap: '1rem'
+    <div className="glass-panel overlay-panel animate-fade-in citizen-report-panel" style={{
+      top: '5.25rem',
+      right: '2rem',
+      width: 'min(480px, calc(100vw - 2rem))',
+      maxHeight: '84vh',
+      overflowY: 'auto',
+      padding: '1.25rem',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '1rem',
     }}>
       <div style={{ borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.85rem' }}>
         <h2 style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Camera size={23} color="#f472b6" /> Сошиал видео хүсэлт
+          <MapPin size={23} color="var(--primary)" /> Байршилд мэдээлэл нэмэх
         </h2>
-        <p style={{ marginTop: '0.35rem', color: 'var(--text-muted)', fontSize: '0.82rem' }}>
-          {queue.length} видео queue • {intakeStats.uploaded} файл • {intakeStats.highPriority} өндөр чухал
+        <p style={{ marginTop: '0.35rem', color: 'var(--text-muted)', fontSize: '0.82rem', lineHeight: 1.45 }}>
+          {reports.length} report • {reportSummary.active} идэвхтэй • {reportSummary.resolved} шийдвэрлэсэн
+        </p>
+        <p style={{ marginTop: '0.3rem', color: 'var(--text-muted)', fontSize: '0.76rem', lineHeight: 1.45 }}>
+          Байршил: {currentLocation ? `${currentLocation.lat.toFixed(5)}, ${currentLocation.lng.toFixed(5)}` : 'device location аваагүй байна'}
         </p>
       </div>
 
-      <form onSubmit={addSocialVideo} style={{
-        display: 'grid', gap: '0.75rem', padding: '0.85rem',
-        background: 'rgba(255, 255, 255, 0.05)', border: '1px solid var(--border-glass)', borderRadius: 8
-      }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-          <label style={labelStyle}>
-            Платформ
-            <select value={form.platform} onChange={(event) => updateForm('platform', event.target.value as Platform)} style={fieldStyle}>
-              <option>Instagram</option>
-              <option>Facebook</option>
-              <option>TikTok</option>
-              <option>Бусад</option>
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Чухал
-            <select value={form.priority} onChange={(event) => updateForm('priority', event.target.value as Priority)} style={fieldStyle}>
-              <option>Бага</option>
-              <option>Дунд</option>
-              <option>Өндөр</option>
-            </select>
-          </label>
-        </div>
-
-        <label style={labelStyle}>
-          Instagram/Facebook video link
-          <input value={form.url} onChange={(event) => updateForm('url', event.target.value)} placeholder="https://instagram.com/reel/... эсвэл https://facebook.com/..." style={fieldStyle} />
-        </label>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
-          <label style={labelStyle}>
-            Хэрэглэгч
-            <input value={form.handle} onChange={(event) => updateForm('handle', event.target.value)} placeholder="@account" style={fieldStyle} />
-          </label>
-          <label style={labelStyle}>
-            Байршил
-            <input value={form.location} onChange={(event) => updateForm('location', event.target.value)} placeholder="Жишээ: Баруун хаалга" style={fieldStyle} />
-          </label>
-        </div>
-
-        <label style={labelStyle}>
-          Эх постын ишлэл / хүсэлт
-          <textarea value={form.quote} onChange={(event) => updateForm('quote', event.target.value)} placeholder="Жишээ: Хүн их бөөгнөрсөн, хамгаалалт хэрэгтэй..." rows={3} style={{ ...fieldStyle, resize: 'vertical' }} />
-        </label>
-
-        <label style={labelStyle}>
-          Видео файл upload
-          <input onChange={(event) => setVideoFile(event.target.files?.[0] || null)} type="file" accept="video/*" style={fieldStyle} />
-        </label>
-
-        <label style={labelStyle}>
-          Дотоод тэмдэглэл
-          <input value={form.notes} onChange={(event) => updateForm('notes', event.target.value)} placeholder="AI tag, хариуцах баг, шалгах тэмдэглэл..." style={fieldStyle} />
-        </label>
-
-        <button className="glass-button active" type="submit" style={{ justifyContent: 'center' }}>
-          <Upload size={16} /> Видео queue-д нэмэх
-        </button>
-      </form>
-
-      {queue.length > 0 && (
-        <div style={{ display: 'grid', gap: '0.75rem' }}>
-          {queue.map(item => (
-            <div key={item.id} style={{
-              background: 'rgba(255, 255, 255, 0.05)', borderRadius: 8, border: '1px solid var(--border-glass)', overflow: 'hidden'
-            }}>
-              {item.videoUrl ? (
-                <video src={item.videoUrl} controls style={{ width: '100%', display: 'block', maxHeight: 220, background: '#020617' }} />
-              ) : (
-                <div style={{ minHeight: 92, display: 'grid', placeItems: 'center', background: 'rgba(2, 6, 23, 0.45)', color: 'var(--text-muted)' }}>
-                  <FileVideo size={24} />
-                </div>
-              )}
-              <div style={{ padding: '0.85rem', display: 'grid', gap: '0.65rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{item.platform} • {item.handle}</div>
-                    <div style={{ color: 'var(--text-muted)', fontSize: '0.76rem', marginTop: '0.15rem' }}>{item.priority} чухал • {item.status}</div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '0.35rem' }}>
-                    <button className="glass-button" onClick={() => markReviewed(item.id)} style={{ padding: '0.45rem 0.55rem', fontSize: '0.76rem' }}>
-                      <ShieldCheck size={14} /> {item.status === 'Шалгасан' ? 'Буцаах' : 'Шалгасан'}
-                    </button>
-                    <button aria-label="Видео устгах" onClick={() => removeVideo(item.id)} style={{ border: 0, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-                </div>
-
-                <p style={{ fontSize: '0.85rem', lineHeight: 1.45 }}>{item.quote}</p>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.45 }}>{item.notes}</div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.76rem' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><MapPin size={13} /> {item.location}</span>
-                  {item.sourceUrl ? (
-                    <a href={item.sourceUrl} target="_blank" rel="noreferrer" style={{ color: 'var(--primary)', display: 'flex', alignItems: 'center', gap: '0.3rem', textDecoration: 'none' }}>
-                      <ExternalLink size={13} /> Эх пост
-                    </a>
-                  ) : (
-                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}><LinkIcon size={13} /> Local upload</span>
-                  )}
-                </div>
+      {currentLocation && nearbyOpen && (
+        <div className="nearby-popup">
+          <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 700 }}>
+                <Bell size={15} /> Ойролцоо юу болж байна
               </div>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.45, marginTop: '0.25rem' }}>
+                Таны байршлаас 2 км доторх report-ууд.
+              </p>
             </div>
-          ))}
+            <button
+              type="button"
+              aria-label="Ойролцоох popup хаах"
+              onClick={() => setNearbyOpen(false)}
+              style={{ border: 0, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          {nearbyReports.length > 0 ? (
+            <div style={{ display: 'grid', gap: '0.5rem' }}>
+              {nearbyReports.map(({ report, distanceMeters }) => (
+                <button
+                  key={report.id}
+                  type="button"
+                  onClick={() => onSelectReport(report.id)}
+                  className="nearby-report-item"
+                >
+                  <span>
+                    <strong>{report.category}</strong>
+                    <small>{report.district} • {report.locationText}</small>
+                  </span>
+                  <em>{formatDistance(distanceMeters)}</em>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', lineHeight: 1.45 }}>
+              Ойролцоо report одоогоор алга. Та шинэ мэдээлэл илгээвэл энэ feed дээр шууд нэмэгдэнэ.
+            </div>
+          )}
         </div>
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-        {posts.map(post => (
-          <div key={post.id} style={{
-            background: 'rgba(255, 255, 255, 0.05)', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border-glass)'
-          }}>
-            {post.image && (
-              <img src={post.image} alt="Post media" style={{ width: '100%', height: 170, objectFit: 'cover' }} />
-            )}
-            <div style={{ padding: '0.9rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-                <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{post.user}</span>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{post.time}</span>
+      <div style={{
+        display: 'grid',
+        gap: '0.55rem',
+        padding: '0.85rem',
+        border: '1px solid var(--border-glass)',
+        borderRadius: 8,
+        background: 'rgba(255, 255, 255, 0.05)',
+      }}>
+        <button className="glass-button active" onClick={requestCurrentLocation} disabled={locationLoading} style={{ justifyContent: 'center' }}>
+          {locationLoading ? <Loader2 size={16} /> : <Crosshair size={16} />}
+          {locationLoading ? 'Байршил авч байна...' : 'Миний байршлыг авах'}
+        </button>
+        <div style={{ color: locationError ? '#fecdd3' : 'var(--text-muted)', fontSize: '0.76rem', lineHeight: 1.45 }}>
+          {locationError || locationStatus || 'Report нь таны зөвшөөрсөн device location дээр marker болж нэмэгдэнэ.'}
+        </div>
+      </div>
+
+      <form onSubmit={addReport} style={{
+        display: 'grid',
+        gap: '0.75rem',
+        padding: '0.85rem',
+        background: 'rgba(255, 255, 255, 0.05)',
+        border: '1px solid var(--border-glass)',
+        borderRadius: 8,
+      }}>
+        <label style={labelStyle}>
+          Ангилал
+          <select value={form.category} onChange={(event) => updateForm('category', event.target.value as ReportCategory)} style={fieldStyle}>
+            {reportCategories.map(category => <option key={category}>{category}</option>)}
+          </select>
+        </label>
+
+        <label style={labelStyle}>
+          Тайлбар
+          <textarea
+            value={form.description}
+            onChange={(event) => updateForm('description', event.target.value)}
+            placeholder="Юу болсон талаар товч тайлбар бичнэ үү..."
+            rows={4}
+            style={{ ...fieldStyle, resize: 'vertical' }}
+          />
+        </label>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.65rem' }}>
+          <label style={labelStyle}>
+            Дүүрэг
+            <input value={form.district} onChange={(event) => updateForm('district', event.target.value)} placeholder="Сүхбаатар" style={fieldStyle} />
+          </label>
+          <label style={labelStyle}>
+            Төлөв
+            <select value={form.status} onChange={(event) => updateForm('status', event.target.value as ReportStatus)} style={fieldStyle}>
+              {reportStatuses.map(status => <option key={status} value={status}>{statusLabels[status]}</option>)}
+            </select>
+          </label>
+        </div>
+
+        <label style={labelStyle}>
+          Байршил
+          <input
+            value={form.locationText}
+            onChange={(event) => updateForm('locationText', event.target.value)}
+            placeholder="Жишээ: Сансарын туннель, Сүхбаатарын талбайн баруун тал..."
+            style={fieldStyle}
+          />
+        </label>
+
+        <label style={labelStyle}>
+          Зураг / бичлэг
+          <input
+            onChange={(event) => updateMediaFiles(Array.from(event.target.files ?? []))}
+            type="file"
+            accept="image/*,video/*"
+            multiple
+            style={fieldStyle}
+          />
+        </label>
+
+        {mediaPreviews.length > 0 && (
+          <div className="upload-preview-popover">
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
+              <div>
+                <div style={{ color: 'var(--primary)', fontSize: '0.76rem', fontWeight: 700 }}>Preview</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                  {mediaFiles.length} файл report дээр хавсарна
+                </div>
               </div>
-              <p style={{ fontSize: '0.86rem', marginBottom: '0.75rem', lineHeight: 1.5 }}>{post.content}</p>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                  <MapPin size={12} /> {post.location}
-                </span>
-                <Heart size={16} color="var(--text-muted)" style={{ cursor: 'pointer' }} />
-              </div>
+              <button
+                type="button"
+                aria-label="Preview хаах"
+                onClick={() => updateMediaFiles([])}
+                style={{ border: 0, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="upload-preview-strip">
+              {mediaPreviews.map(media => (
+                <div className="upload-preview-item" key={`${media.fileName}-${media.url}`}>
+                  {media.type === 'image' ? (
+                    <img src={media.url} alt={media.fileName || 'Зураг preview'} />
+                  ) : (
+                    <video src={media.url} muted playsInline />
+                  )}
+                  <span>{media.fileName}</span>
+                </div>
+              ))}
             </div>
           </div>
+        )}
+
+        <label style={labelStyle}>
+          Сэтгэгдэл
+          <input
+            value={form.comments}
+            onChange={(event) => updateForm('comments', event.target.value)}
+            placeholder="Нэмэлт тайлбар эсвэл анхаарах зүйл..."
+            style={fieldStyle}
+          />
+        </label>
+
+        <button className="glass-button active" type="submit" style={{ justifyContent: 'center' }}>
+          <Send size={16} /> Илгээх
+        </button>
+      </form>
+
+      {successMessage && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem', color: 'var(--primary)', fontSize: '0.82rem' }}>
+          <CheckCircle2 size={16} /> {successMessage}
+        </div>
+      )}
+
+      {selectedReport && (
+        <ReportDetail report={selectedReport} onClose={() => onSelectReport(null)} />
+      )}
+
+      <div style={{ display: 'grid', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'center' }}>
+          <div>
+            <h3 style={{ fontSize: '0.98rem' }}>Нэгдсэн feed</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.76rem', marginTop: '0.2rem' }}>
+              {currentLocation ? 'Танд ойроос эхэлж эрэмбэлсэн.' : 'Шинэ report-уудаас эхэлж харуулж байна.'}
+            </p>
+          </div>
+          {currentLocation && (
+            <button
+              type="button"
+              className="glass-button"
+              onClick={() => setNearbyOpen(true)}
+              style={{ padding: '0.45rem 0.55rem', fontSize: '0.75rem' }}
+            >
+              <Bell size={14} /> Ойролцоо
+            </button>
+          )}
+        </div>
+
+        {feedReports.map(({ report, distanceMeters }) => (
+          <button
+            key={report.id}
+            className="report-list-item"
+            onClick={() => onSelectReport(report.id)}
+            style={{
+              textAlign: 'left',
+              color: 'var(--text-main)',
+              background: selectedReport?.id === report.id ? 'rgba(74, 222, 128, 0.12)' : 'rgba(255, 255, 255, 0.05)',
+              border: selectedReport?.id === report.id ? '1px solid var(--primary)' : '1px solid var(--border-glass)',
+              borderRadius: 8,
+              padding: '0.85rem',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              display: 'grid',
+              gap: '0.45rem',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+              <strong style={{ fontSize: '0.9rem' }}>{report.category}</strong>
+              <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+                {distanceMeters !== undefined ? formatDistance(distanceMeters) : statusLabels[report.status]}
+              </span>
+            </div>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>{report.district} • {report.locationText}</span>
+            <span style={{ fontSize: '0.82rem', lineHeight: 1.45 }}>{report.description}</span>
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.72rem' }}>{statusLabels[report.status]} • {formatCreatedAt(report.createdAt)}</span>
+          </button>
         ))}
       </div>
     </div>
   )
 }
 
-export default SocialFeed
+type ReportDetailProps = {
+  report: CitizenReport
+  onClose: () => void
+}
+
+const ReportDetail = ({ report, onClose }: ReportDetailProps) => (
+  <article className="report-detail-card" style={{
+    display: 'grid',
+    gap: '0.8rem',
+    padding: '0.9rem',
+    borderRadius: 8,
+    border: '1px solid rgba(74, 222, 128, 0.34)',
+    background: 'rgba(74, 222, 128, 0.08)',
+  }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.75rem', alignItems: 'flex-start' }}>
+      <div>
+        <div style={{ color: 'var(--primary)', fontSize: '0.78rem', fontWeight: 700 }}>Дэлгэрэнгүй</div>
+        <h3 style={{ marginTop: '0.2rem', fontSize: '1rem' }}>{report.category}</h3>
+      </div>
+      <button aria-label="Дэлгэрэнгүй хаах" onClick={onClose} style={{ border: 0, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>
+        <X size={17} />
+      </button>
+    </div>
+
+    <p style={{ fontSize: '0.88rem', lineHeight: 1.5 }}>{report.description}</p>
+
+    {report.media.length > 0 && (
+      <div style={{ display: 'grid', gap: '0.55rem' }}>
+        {report.media.map(media => (
+          <div key={`${media.fileName}-${media.url}`} style={{ overflow: 'hidden', borderRadius: 8, border: '1px solid var(--border-glass)', background: '#020617' }}>
+            {media.type === 'image' ? (
+              <img src={media.url} alt={media.fileName || 'Иргэний мэдээллийн зураг'} style={{ width: '100%', maxHeight: 220, objectFit: 'cover', display: 'block' }} />
+            ) : (
+              <video src={media.url} controls style={{ width: '100%', maxHeight: 220, display: 'block' }} />
+            )}
+          </div>
+        ))}
+      </div>
+    )}
+
+    {report.media.length === 0 && (
+      <div style={{
+        minHeight: 82,
+        borderRadius: 8,
+        border: '1px dashed var(--border-glass)',
+        display: 'grid',
+        placeItems: 'center',
+        color: 'var(--text-muted)',
+        gap: '0.35rem',
+      }}>
+        <ImagePlus size={22} />
+        <span style={{ fontSize: '0.78rem' }}>Зураг / бичлэг хавсаргаагүй</span>
+      </div>
+    )}
+
+    <div style={{ display: 'grid', gap: '0.45rem', color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.45 }}>
+      <span><MapPin size={13} style={{ verticalAlign: '-2px' }} /> {report.district} • {report.locationText}</span>
+      <span>Координат: {report.coordinates.lat.toFixed(5)}, {report.coordinates.lng.toFixed(5)}</span>
+      <span>Төлөв: {statusLabels[report.status]}</span>
+      <span>Илгээсэн: {formatCreatedAt(report.createdAt)}</span>
+      <span>Оруулсан: {report.createdBy}</span>
+      {report.comments && <span><MessageSquare size={13} style={{ verticalAlign: '-2px' }} /> {report.comments}</span>}
+    </div>
+  </article>
+)
+
+export default CitizenReportPanel

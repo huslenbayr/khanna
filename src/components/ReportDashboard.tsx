@@ -13,10 +13,10 @@ type IncidentReport = {
 
 const ReportDashboard = () => {
   const reports: IncidentReport[] = [
-    { id: 1, type: 'Maintenance', desc: 'Broken seat in Sector D, Row 12', time: '2m ago', severity: 'low', aiTag: 'Verified' },
-    { id: 2, type: 'Crowd Control', desc: 'High density near East Entrance. Potential bottleneck.', time: '5m ago', severity: 'high', aiTag: 'Urgent Action' },
-    { id: 3, type: 'Medical', desc: 'Minor injury reported near Food Court B', time: '12m ago', severity: 'medium', aiTag: 'Dispatched' },
-    { id: 4, type: 'Security', desc: 'Unauthorized access attempt at VIP gate', time: '20m ago', severity: 'high', aiTag: 'Resolved' },
+    { id: 1, type: 'Maintenance', desc: 'Street light outage reported near Seoul Street', time: '2m ago', severity: 'low', aiTag: 'Verified' },
+    { id: 2, type: 'Traffic', desc: 'High density near Peace Avenue. Potential bottleneck.', time: '5m ago', severity: 'high', aiTag: 'Urgent Action' },
+    { id: 3, type: 'Medical', desc: 'Minor injury reported near Central Tower', time: '12m ago', severity: 'medium', aiTag: 'Dispatched' },
+    { id: 4, type: 'Security', desc: 'Suspicious access attempt near service corridor', time: '20m ago', severity: 'high', aiTag: 'Resolved' },
   ];
 
   return (

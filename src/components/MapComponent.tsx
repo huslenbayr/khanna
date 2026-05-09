@@ -2,15 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
+import type { FeatureCollection, LineString } from 'geojson'
 import type {
   ExpressionSpecification,
   GeoJSONSourceSpecification,
   LayerSpecification,
   MapGeoJSONFeature,
   MapLayerMouseEvent,
-  MapMouseEvent,
   StyleSpecification
 } from 'maplibre-gl'
+import type { CitizenReport, ReportCategory, ReportCoordinates, ReportStatus } from '../types/citizenReport'
+import type { CommunityMember, CommunityStatus } from '../types/community'
 
 const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN
 const CARTO_DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -18,9 +20,90 @@ const MAPBOX_STREETS_SOURCE_ID = 'mapbox-streets'
 const BUILDING_LAYER_ID = '3d-buildings'
 const BUILDING_HEIGHT_LABEL_LAYER_ID = 'building-height-labels'
 const HOTZONE_COLOR = '#f43f5e'
+const TRAFFIC_SOURCE_ID = 'khannaway-traffic-demo'
+const TRAFFIC_LAYER_ID = 'khannaway-traffic-lines'
 
 const buildingHeightExpression: ExpressionSpecification = ['case', ['has', 'height'], ['to-number', ['get', 'height']], 8]
 const buildingBaseExpression: ExpressionSpecification = ['case', ['has', 'min_height'], ['to-number', ['get', 'min_height']], 0]
+
+type MapComponentProps = {
+  reports?: CitizenReport[]
+  currentLocation?: ReportCoordinates | null
+  selectedReportId?: string | null
+  onReportSelect?: (reportId: string) => void
+  communityMembers?: CommunityMember[]
+  selectedCommunityMemberId?: number | null
+  onCommunityMemberSelect?: (memberId: number) => void
+}
+
+const statusColor: Record<ReportStatus, string> = {
+  Received: '#38bdf8',
+  Verified: '#4ade80',
+  'In Progress': '#f59e0b',
+  Resolved: '#94a3b8',
+}
+
+const categoryColor: Record<ReportCategory, string> = {
+  'Мөстсөн / халтиргаатай хэсэг': '#38bdf8',
+  'Замын нүх': '#f59e0b',
+  'Эвдэрсэн гэрэл': '#fde047',
+  'Хог / бохирдол': '#a3e635',
+  'Аюултай явган зам': '#f43f5e',
+  'Замын хөдөлгөөний асуудал': '#fb7185',
+  Бусад: '#94a3b8',
+}
+
+const communityStatusColor: Record<CommunityStatus, string> = {
+  Онлайн: '#4ade80',
+  Офлайн: '#64748b',
+  'Хамт байна': '#3b82f6',
+}
+
+const trafficDemoData: FeatureCollection<LineString, { level: 'low' | 'medium' | 'high' }> = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: { level: 'high' },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [106.889, 47.914],
+          [106.903, 47.916],
+          [106.918, 47.918],
+          [106.935, 47.920],
+          [106.951, 47.923],
+        ],
+      },
+    },
+    {
+      type: 'Feature',
+      properties: { level: 'medium' },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [106.910, 47.930],
+          [106.918, 47.922],
+          [106.927, 47.913],
+          [106.938, 47.903],
+        ],
+      },
+    },
+    {
+      type: 'Feature',
+      properties: { level: 'low' },
+      geometry: {
+        type: 'LineString',
+        coordinates: [
+          [106.857, 47.914],
+          [106.875, 47.914],
+          [106.894, 47.915],
+          [106.908, 47.916],
+        ],
+      },
+    },
+  ],
+}
 
 const createBaseMapStyle = (): string | StyleSpecification => {
   if (!MAPBOX_ACCESS_TOKEN) {
@@ -150,36 +233,54 @@ const createHeightPopupContent = (feature: MapGeoJSONFeature) => {
   return wrapper
 }
 
-const MapComponent = () => {
+const MapComponent = ({
+  reports = [],
+  currentLocation = null,
+  selectedReportId = null,
+  onReportSelect,
+  communityMembers = [],
+  selectedCommunityMemberId = null,
+  onCommunityMemberSelect,
+}: MapComponentProps) => {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const map = useRef<maplibregl.Map | null>(null)
-  const miniContainer = useRef<HTMLDivElement | null>(null)
-  const miniMap = useRef<maplibregl.Map | null>(null)
+  const reportMarkers = useRef<maplibregl.Marker[]>([])
+  const communityMarkers = useRef<maplibregl.Marker[]>([])
+  const currentLocationMarker = useRef<maplibregl.Marker | null>(null)
+  const onReportSelectRef = useRef(onReportSelect)
+  const onCommunityMemberSelectRef = useRef(onCommunityMemberSelect)
   const [ready, setReady] = useState(false)
   const [buildingsReady, setBuildingsReady] = useState(false)
+  const [mapMode, setMapMode] = useState<'3d' | '2d'>('3d')
 
-  // Naadam Stadium Coordinates (approximate Ulaanbaatar central stadium)
-  const UB_STADIUM_LNG = 106.9155
-  const UB_STADIUM_LAT = 47.9014
-  const CAMERA_CENTER_LNG = 106.9168
-  const CAMERA_CENTER_LAT = 47.9001
-  const HEIGHT_MARKER_LNG = 106.91762
-  const HEIGHT_MARKER_LAT = 47.89899
+  const UB_CENTER_LNG = 106.9177
+  const UB_CENTER_LAT = 47.9186
+  const CAMERA_CENTER_LNG = 106.9177
+  const CAMERA_CENTER_LAT = 47.9186
+  const HEIGHT_MARKER_LNG = 106.9187
+  const HEIGHT_MARKER_LAT = 47.9123
   const HEIGHT_MARKER_METERS = 37.2
+
+  useEffect(() => {
+    onReportSelectRef.current = onReportSelect
+  }, [onReportSelect])
+
+  useEffect(() => {
+    onCommunityMemberSelectRef.current = onCommunityMemberSelect
+  }, [onCommunityMemberSelect])
 
   useEffect(() => {
     if (map.current) return // already initialized
     const mainMapElement = mapContainer.current
-    const miniMapElement = miniContainer.current
-    if (!mainMapElement || !miniMapElement) return
+    if (!mainMapElement) return
 
     const mainMap = new maplibregl.Map({
       container: mainMapElement,
       style: createBaseMapStyle(),
       center: [CAMERA_CENTER_LNG, CAMERA_CENTER_LAT],
-      zoom: 17.1,
-      pitch: 68,
-      bearing: -25,
+      zoom: 12.7,
+      pitch: 54,
+      bearing: -18,
       canvasContextAttributes: { antialias: true }
     })
     map.current = mainMap
@@ -187,12 +288,12 @@ const MapComponent = () => {
     // Add default navigation controls (zoom/rotate)
     mainMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
 
-    mainMap.on('load', () => {
+      mainMap.on('load', () => {
       setReady(true)
 
-      // Stadium marker
+      // City center marker
       const el = document.createElement('div')
-      el.className = 'stadium-marker'
+      el.className = 'city-center-marker'
       el.style.backgroundColor = 'var(--primary)'
       el.style.width = '20px'
       el.style.height = '20px'
@@ -201,8 +302,8 @@ const MapComponent = () => {
       el.style.border = '2px solid white'
 
       new maplibregl.Marker({ element: el })
-        .setLngLat([UB_STADIUM_LNG, UB_STADIUM_LAT])
-        .setPopup(new maplibregl.Popup({ offset: 25 }).setText('Үндэсний спортын цэнгэлдэх хүрээлэн'))
+        .setLngLat([UB_CENTER_LNG, UB_CENTER_LAT])
+        .setPopup(new maplibregl.Popup({ offset: 25 }).setText('Улаанбаатар хотын төв'))
         .addTo(mainMap)
 
       // Hotzone source + fill
@@ -217,9 +318,9 @@ const MapComponent = () => {
               coordinates: [
                 [
                   [106.914, 47.902],
-                  [106.917, 47.902],
-                  [106.917, 47.900],
-                  [106.914, 47.900],
+                  [106.954, 47.924],
+                  [106.938, 47.890],
+                  [106.890, 47.895],
                   [106.914, 47.902]
                 ]
               ]
@@ -236,6 +337,48 @@ const MapComponent = () => {
             'fill-opacity': 0.28
           }
         })
+      }
+
+      if (!mainMap.getSource(TRAFFIC_SOURCE_ID)) {
+        mainMap.addSource(TRAFFIC_SOURCE_ID, {
+          type: 'geojson',
+          data: trafficDemoData,
+        } as GeoJSONSourceSpecification)
+
+        mainMap.addLayer({
+          id: TRAFFIC_LAYER_ID,
+          type: 'line',
+          source: TRAFFIC_SOURCE_ID,
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
+          paint: {
+            'line-color': [
+              'match',
+              ['get', 'level'],
+              'high',
+              '#ef4444',
+              'medium',
+              '#f59e0b',
+              'low',
+              '#22c55e',
+              '#94a3b8',
+            ],
+            'line-width': [
+              'interpolate',
+              ['linear'],
+              ['zoom'],
+              10,
+              3,
+              14,
+              8,
+              16,
+              13,
+            ],
+            'line-opacity': 0.86,
+          },
+        } as LayerSpecification)
       }
 
       if (add3DBuildings(mainMap)) {
@@ -277,21 +420,6 @@ const MapComponent = () => {
         .setPopup(new maplibregl.Popup({ offset: 18 }).setText(`Барилгын өндөр: ${HEIGHT_MARKER_METERS} метр`))
         .addTo(mainMap)
 
-      // Create mini 2D map after main map is ready
-      const overviewMap = new maplibregl.Map({
-        container: miniMapElement,
-        style: createBaseMapStyle(),
-        center: [CAMERA_CENTER_LNG, CAMERA_CENTER_LAT],
-        zoom: 14,
-        interactive: true // allow click to recenter; we'll disable heavy handlers below
-      })
-      miniMap.current = overviewMap
-
-      // ensure the mini map has correct size immediately
-      try { overviewMap.resize() } catch { /* ignore */ }
-
-      // replicate stadium marker to mini map
-
       // Enable more interactive controls for 'GeoGuessr'-like free movement
       try {
         if (mainMap.dragRotate) mainMap.dragRotate.enable()
@@ -301,63 +429,134 @@ const MapComponent = () => {
         // silently ignore if API not present in this build
         console.warn('Map interaction enhancement not fully supported:', e)
       }
-      // create mini-map marker element
-      const el2 = document.createElement('div')
-      el2.style.width = '10px'
-      el2.style.height = '10px'
-      el2.style.borderRadius = '50%'
-      el2.style.background = 'var(--primary)'
-      el2.style.border = '1px solid white'
-      new maplibregl.Marker({ element: el2 }).setLngLat([UB_STADIUM_LNG, UB_STADIUM_LAT]).addTo(overviewMap)
-
-      // disable heavy interactions on mini map but keep click handling
-      try {
-        if (overviewMap.dragPan) overviewMap.dragPan.disable()
-        if (overviewMap.scrollZoom) overviewMap.scrollZoom.disable()
-        if (overviewMap.doubleClickZoom) overviewMap.doubleClickZoom.disable()
-      } catch { /* ignore if not available */ }
-
-      // sync view: when main map moves, update mini map center
-      mainMap.on('move', () => {
-        const center = mainMap.getCenter()
-        overviewMap.setCenter(center)
-      })
-
-      // Allow clicking mini-map to re-center main map (small interaction)
-      overviewMap.getCanvas().style.cursor = 'pointer'
-      overviewMap.on('click', (e: MapMouseEvent) => {
-        const lngLat = e.lngLat
-        mainMap.flyTo({ center: [lngLat.lng, lngLat.lat], zoom: Math.max(15, mainMap.getZoom()) })
-      })
     })
 
     // cleanup on unmount
     return () => {
+      reportMarkers.current.forEach(marker => marker.remove())
+      communityMarkers.current.forEach(marker => marker.remove())
+      currentLocationMarker.current?.remove()
       mainMap.remove()
-      if (miniMap.current) miniMap.current.remove()
       map.current = null
-      miniMap.current = null
     }
   }, [])
+
+  const switchMapMode = () => {
+    if (!map.current) return
+
+    const nextMode = mapMode === '3d' ? '2d' : '3d'
+    setMapMode(nextMode)
+    map.current.easeTo({
+      pitch: nextMode === '3d' ? 54 : 0,
+      bearing: nextMode === '3d' ? -18 : 0,
+      duration: 650,
+    })
+  }
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+
+    reportMarkers.current.forEach(marker => marker.remove())
+    reportMarkers.current = reports.map(report => {
+      const markerElement = document.createElement('button')
+      markerElement.type = 'button'
+      markerElement.setAttribute('aria-label', `${report.category} report marker`)
+      markerElement.style.width = selectedReportId === report.id ? '26px' : '21px'
+      markerElement.style.height = selectedReportId === report.id ? '26px' : '21px'
+      markerElement.style.borderRadius = '50%'
+      markerElement.style.border = selectedReportId === report.id ? '3px solid white' : '2px solid white'
+      markerElement.style.background = statusColor[report.status] || categoryColor[report.category]
+      markerElement.style.boxShadow = selectedReportId === report.id
+        ? '0 0 0 6px rgba(74, 222, 128, 0.22), 0 0 18px rgba(74, 222, 128, 0.54)'
+        : '0 0 14px rgba(15, 23, 42, 0.45)'
+      markerElement.style.cursor = 'pointer'
+      markerElement.style.padding = '0'
+
+      markerElement.addEventListener('click', event => {
+        event.stopPropagation()
+        onReportSelectRef.current?.(report.id)
+      })
+
+      return new maplibregl.Marker({ element: markerElement, anchor: 'bottom' })
+        .setLngLat([report.coordinates.lng, report.coordinates.lat])
+        .setPopup(new maplibregl.Popup({ offset: 18 }).setText(`${report.category} • ${report.locationText}`))
+        .addTo(map.current as maplibregl.Map)
+    })
+  }, [ready, reports, selectedReportId])
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+
+    communityMarkers.current.forEach(marker => marker.remove())
+    communityMarkers.current = communityMembers.map(member => {
+      const markerElement = document.createElement('button')
+      markerElement.type = 'button'
+      markerElement.setAttribute('aria-label', `${member.name} location marker`)
+      markerElement.textContent = member.name.slice(0, 1).toUpperCase()
+      markerElement.style.width = selectedCommunityMemberId === member.id ? '31px' : '25px'
+      markerElement.style.height = selectedCommunityMemberId === member.id ? '31px' : '25px'
+      markerElement.style.borderRadius = '50%'
+      markerElement.style.border = selectedCommunityMemberId === member.id ? '3px solid white' : '2px solid white'
+      markerElement.style.background = communityStatusColor[member.status]
+      markerElement.style.boxShadow = selectedCommunityMemberId === member.id
+        ? '0 0 0 7px rgba(59, 130, 246, 0.2), 0 0 18px rgba(59, 130, 246, 0.54)'
+        : '0 0 14px rgba(15, 23, 42, 0.45)'
+      markerElement.style.color = '#06111a'
+      markerElement.style.cursor = 'pointer'
+      markerElement.style.padding = '0'
+      markerElement.style.fontWeight = '800'
+      markerElement.style.fontSize = '0.78rem'
+
+      markerElement.addEventListener('click', event => {
+        event.stopPropagation()
+        onCommunityMemberSelectRef.current?.(member.id)
+      })
+
+      return new maplibregl.Marker({ element: markerElement, anchor: 'bottom' })
+        .setLngLat([member.coordinates.lng, member.coordinates.lat])
+        .setPopup(new maplibregl.Popup({ offset: 18 }).setText(`${member.name} • ${member.location}`))
+        .addTo(map.current as maplibregl.Map)
+    })
+  }, [communityMembers, ready, selectedCommunityMemberId])
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+
+    currentLocationMarker.current?.remove()
+    if (!currentLocation) return
+
+    const pointElement = document.createElement('div')
+    pointElement.style.width = '20px'
+    pointElement.style.height = '20px'
+    pointElement.style.borderRadius = '50%'
+    pointElement.style.background = 'rgba(74, 222, 128, 0.9)'
+    pointElement.style.border = '2px solid white'
+    pointElement.style.boxShadow = '0 0 0 8px rgba(74, 222, 128, 0.16)'
+
+    currentLocationMarker.current = new maplibregl.Marker({ element: pointElement, anchor: 'center' })
+      .setLngLat([currentLocation.lng, currentLocation.lat])
+      .addTo(map.current)
+  }, [ready, currentLocation])
 
   return (
     <>
       <div ref={mapContainer} style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }} />
 
       <div className="glass-panel overlay-panel animate-fade-in" style={{ top: '5.75rem', right: '2rem', width: 260, padding: '1rem', display: 'grid', gap: '0.6rem' }}>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>3D өндрийн давхарга</div>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Улаанбаатар map view</div>
         <div style={{ fontSize: '1rem', fontWeight: 700, color: buildingsReady ? 'var(--primary)' : 'var(--text-muted)' }}>
-          {buildingsReady ? 'Барилгын өндөр идэвхтэй' : ready ? 'Өндрийн мэдээлэл ачаалсангүй' : 'Газрын зураг ачаалж байна'}
+          {mapMode === '3d' ? '3D харагдац' : '2D харагдац'}
         </div>
         <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>
-          Барилга дээр дарж өндрийг метрээр харна.
+          {buildingsReady ? 'Барилга дээр дарж өндрийг метрээр харна.' : ready ? 'Газрын зураг идэвхтэй.' : 'Газрын зураг ачаалж байна.'}
         </div>
-      </div>
-
-      {/* Mini 2D map overlay */}
-      <div className="glass-panel overlay-panel animate-fade-in" style={{ bottom: '2rem', right: '2rem', width: 220, height: 220, padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>2D жижиг газрын зураг</div>
-        <div ref={miniContainer} style={{ flex: 1, borderRadius: 8, overflow: 'hidden' }} />
+        <button className="glass-button active" type="button" onClick={switchMapMode} style={{ justifyContent: 'center', padding: '0.62rem 0.75rem' }}>
+          {mapMode === '3d' ? '2D болгох' : '3D болгох'}
+        </button>
+        <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.72rem' }}>
+          <span style={{ width: 18, height: 4, borderRadius: 999, background: '#ef4444' }} />
+          <span>Замын ачаалал demo</span>
+        </div>
       </div>
     </>
   )

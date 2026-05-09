@@ -5,7 +5,7 @@ import SiteShell from '../src/components/SiteShell'
 
 export const metadata = {
   title: 'KhannaWay',
-  description: 'Naadam visitor guide and live event command center'
+  description: 'Ulaanbaatar city operations and live video command center'
 }
 
 type RootLayoutProps = {

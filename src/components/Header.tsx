@@ -2,7 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { User } from 'lucide-react'
+import { UserCircle } from 'lucide-react'
+import useFirebaseUser from '../hooks/useFirebaseUser'
 
 type HeaderProps = {
   onOpenAuth: () => void
@@ -10,6 +11,7 @@ type HeaderProps = {
 
 const Header = ({ onOpenAuth }: HeaderProps) => {
   const pathname = usePathname()
+  const { user } = useFirebaseUser()
 
   // If on dashboard route, offset header so it doesn't overlap sidebar.
   const leftOffset = pathname.startsWith('/dashboard') ? 304 : 16
@@ -24,8 +26,8 @@ const Header = ({ onOpenAuth }: HeaderProps) => {
           <Link href="/dashboard" style={{ textDecoration: 'none' }}>
             <button className="glass-button" style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}>Хяналт</button>
           </Link>
-          <Link href="/naadam" style={{ textDecoration: 'none' }}>
-            <button className="glass-button" style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', background: pathname === '/naadam' ? 'var(--bg-panel-hover)' : undefined }}>Наадам</button>
+          <Link href="/city" style={{ textDecoration: 'none' }}>
+            <button className="glass-button" style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem', background: pathname === '/city' ? 'var(--bg-panel-hover)' : undefined }}>Хотын мэдээлэл</button>
           </Link>
           <Link href="/admin" style={{ textDecoration: 'none' }}>
             <button className="glass-button" style={{ padding: '0.5rem 0.75rem', fontSize: '0.9rem' }}>Админ</button>
@@ -34,8 +36,8 @@ const Header = ({ onOpenAuth }: HeaderProps) => {
       </div>
 
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-        <button className="glass-button" onClick={onOpenAuth} aria-label="Нэвтрэх">
-          <User size={16} /> Нэвтрэх / Бүртгүүлэх
+        <button className="glass-button" onClick={onOpenAuth} aria-label="Account">
+          <UserCircle size={16} /> {user?.email ? user.email.split('@')[0] : 'Sign in'}
         </button>
       </div>
     </header>
