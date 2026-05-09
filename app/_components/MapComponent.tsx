@@ -1,6 +1,6 @@
 'use client'
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import type {
   ExpressionSpecification,
@@ -10,6 +10,7 @@ import type {
   MapLayerMouseEvent,
   StyleSpecification
 } from 'maplibre-gl'
+import EventCard from './EventCard'
 
 const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN
 const CARTO_DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -18,188 +19,408 @@ const BUILDING_LAYER_ID = '3d-buildings'
 const BUILDING_HEIGHT_LABEL_LAYER_ID = 'building-height-labels'
 const HOTZONE_COLOR = '#f43f5e'
 
-const buildingHeightExpression: ExpressionSpecification = ['case', ['has', 'height'], ['to-number', ['get', 'height']], 8]
-const buildingBaseExpression: ExpressionSpecification = ['case', ['has', 'min_height'], ['to-number', ['get', 'min_height']], 0]
+// ==================== STYLE EXPRESSIONS ====================
+
+const buildingHeightExpression: ExpressionSpecification = [
+  'case',
+  ['has', 'height'],
+  ['to-number', ['get', 'height']],
+  8
+]
+
+const buildingBaseExpression: ExpressionSpecification = [
+  'case',
+  ['has', 'min_height'],
+  ['to-number', ['get', 'min_height']],
+  0
+]
+
+// ==================== MAP STYLE ====================
 
 const createBaseMapStyle = (): string | StyleSpecification => {
   if (!MAPBOX_ACCESS_TOKEN) return CARTO_DARK_STYLE
+
   return {
     version: 8,
     glyphs: `https://api.mapbox.com/fonts/v1/mapbox/{fontstack}/{range}.pbf?access_token=${MAPBOX_ACCESS_TOKEN}`,
     sources: {
       mapbox: {
         type: 'raster',
-        tiles: [`https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_ACCESS_TOKEN}`],
+        tiles: [
+          `https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_ACCESS_TOKEN}`
+        ],
         tileSize: 256,
-        attribution: '© Mapbox © OpenStreetMap',
+        attribution: '© Mapbox © OpenStreetMap'
       },
       [MAPBOX_STREETS_SOURCE_ID]: {
         type: 'vector',
-        tiles: [`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/{z}/{x}/{y}.mvt?access_token=${MAPBOX_ACCESS_TOKEN}`],
+        tiles: [
+          `https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/{z}/{x}/{y}.mvt?access_token=${MAPBOX_ACCESS_TOKEN}`
+        ],
         minzoom: 0,
-        maxzoom: 16,
-      },
+        maxzoom: 16
+      }
     },
-    layers: [{ id: 'mapbox', type: 'raster', source: 'mapbox' }],
+    layers: [{ id: 'mapbox', type: 'raster', source: 'mapbox' }]
   } as StyleSpecification
 }
 
-const add3DBuildings = (targetMap: maplibregl.Map) => {
-  if (!MAPBOX_ACCESS_TOKEN || targetMap.getLayer(BUILDING_LAYER_ID)) return
+// ==================== 3D BUILDINGS ====================
 
-  targetMap.addLayer({
+const add3DBuildings = (map: maplibregl.Map) => {
+  if (!MAPBOX_ACCESS_TOKEN || map.getLayer(BUILDING_LAYER_ID)) return
+
+  map.addLayer({
     id: BUILDING_LAYER_ID,
     type: 'fill-extrusion',
     source: MAPBOX_STREETS_SOURCE_ID,
     'source-layer': 'building',
     minzoom: 14,
-    filter: ['all', ['!=', ['get', 'underground'], 'true'], ['==', ['get', 'extrude'], 'true']],
+    filter: [
+      'all',
+      ['!=', ['get', 'underground'], 'true'],
+      ['==', ['get', 'extrude'], 'true']
+    ],
     paint: {
-      'fill-extrusion-color': ['interpolate', ['linear'], buildingHeightExpression, 0, '#38bdf8', 12, '#4ade80', 32, '#f59e0b', 70, '#f43f5e'],
-      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.25, buildingHeightExpression],
+      'fill-extrusion-color': [
+        'interpolate',
+        ['linear'],
+        buildingHeightExpression,
+        0, '#38bdf8',
+        12, '#4ade80',
+        32, '#f59e0b',
+        70, '#f43f5e'
+      ],
+      'fill-extrusion-height': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        14, 0,
+        15.25, buildingHeightExpression
+      ],
       'fill-extrusion-base': buildingBaseExpression,
-      'fill-extrusion-opacity': 0.86,
-    },
+      'fill-extrusion-opacity': 0.86
+    }
   } as LayerSpecification)
 
-  targetMap.addLayer({
+  map.addLayer({
     id: BUILDING_HEIGHT_LABEL_LAYER_ID,
     type: 'symbol',
     source: MAPBOX_STREETS_SOURCE_ID,
     'source-layer': 'building',
     minzoom: 16,
-    filter: ['all', ['!=', ['get', 'underground'], 'true'], ['==', ['get', 'extrude'], 'true']],
+    filter: [
+      'all',
+      ['!=', ['get', 'underground'], 'true'],
+      ['==', ['get', 'extrude'], 'true']
+    ],
     layout: {
       'text-field': ['concat', ['to-string', ['round', buildingHeightExpression]], ' м'],
       'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
       'text-size': 11,
       'text-anchor': 'center',
-      'text-allow-overlap': false,
-      'symbol-placement': 'point',
+      'symbol-placement': 'point'
     },
     paint: {
       'text-color': '#f8fafc',
       'text-halo-color': '#020617',
       'text-halo-width': 1.5,
-      'text-halo-blur': 0.25,
-    },
+      'text-halo-blur': 0.25
+    }
   } as LayerSpecification)
 }
 
+// ==================== POPUP ====================
+
 const createHeightPopupContent = (feature: MapGeoJSONFeature) => {
   const height = Number(feature?.properties?.height)
-  const rounded = Number.isFinite(height) ? Math.round(height * 10) / 10 : null
-  const buildingType = typeof feature?.properties?.type === 'string' ? feature.properties.type : 'building'
-  const wrapper = document.createElement('div')
-  wrapper.style.cssText = 'display:grid;gap:0.25rem'
-  const t = document.createElement('strong')
-  t.textContent = 'Барилгын өндөр'
-  const h = document.createElement('span')
-  h.textContent = rounded === null ? 'Өндрийн мэдээлэл алга' : `${rounded} м`
-  const s = document.createElement('small')
-  s.style.color = '#94a3b8'
-  s.textContent = `Төрөл: ${buildingType}`
-  wrapper.append(t, h, s)
-  return wrapper
+  const rounded = Number.isFinite(height)
+    ? Math.round(height * 10) / 10
+    : null
+
+  const type = typeof feature?.properties?.type === 'string'
+    ? feature.properties.type
+    : 'building'
+
+  const el = document.createElement('div')
+  el.style.cssText = 'display:grid;gap:0.25rem'
+
+  const title = document.createElement('strong')
+  title.textContent = 'Барилгын өндөр'
+
+  const value = document.createElement('span')
+  value.textContent = rounded === null ? 'Өндрийн мэдээлэл алга' : `${rounded} м`
+
+  const meta = document.createElement('small')
+  meta.style.color = '#94a3b8'
+  meta.textContent = `Төрөл: ${type}`
+
+  el.append(title, value, meta)
+  return el
 }
 
-export type MapHandle = { flyTo: (lat: number, lng: number) => void }
+// ==================== TYPES ====================
 
-const MapComponent = forwardRef<MapHandle>(function MapComponent(_, ref) {
+export interface EventData {
+  id: string
+  name: string
+  dateTime: string
+  description: string
+  type?: 'music' | 'tech' | 'art' | 'sports' | 'default'
+}
+
+export type GetEventDataFunction = (eventId: string) => Promise<EventData>
+
+interface EventMarker {
+  id: string
+  lat: number
+  lng: number
+  type?: string
+  marker: maplibregl.Marker
+}
+
+interface MapComponentProps {
+  events?: Array<{ id: string; lat: number; lng: number; type?: string }>
+}
+
+// ==================== COLORS ====================
+
+const getEventDotColor = (type?: string): string => {
+  const map: Record<string, string> = {
+    music: '#f43f5e',
+    tech: '#3b82f6',
+    art: '#a855f7',
+    sports: '#22c55e',
+    food: '#f97316',
+    workshop: '#eab308',
+    default: '#6b7280'
+  }
+  return map[type || 'default'] || map.default
+}
+
+const getShadow = (type?: string) => {
+  const c = getEventDotColor(type)
+  return c + '99'
+}
+
+// ==================== MOCK DATA ====================
+
+const mockGetEventData: GetEventDataFunction = async (id) => {
+  await new Promise(r => setTimeout(r, 200))
+
+  return {
+    id,
+    name: 'Event',
+    dateTime: 'TBD',
+    description: 'No description available',
+    type: 'default'
+  }
+}
+
+// ==================== COMPONENT ====================
+
+const MapComponent = forwardRef(function MapComponent(
+  { events = [] }: MapComponentProps,
+  ref
+) {
+
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const map = useRef<maplibregl.Map | null>(null)
 
+  const markers = useRef<Map<string, EventMarker>>(new Map())
+  const getEventDataFn = useRef<GetEventDataFunction>(mockGetEventData)
+
+  const [activeEvent, setActiveEvent] =
+    useState<{ eventId: string; x: number; y: number } | null>(null)
+
+  const UB = { lng: 106.9155, lat: 47.9014 }
+  const CENTER = { lng: 106.9168, lat: 47.9001 }
+
+  // ==================== SAFE MARKERS (FIXED DRIFT) ====================
+
+  const createEventMarkers = (
+    list: Array<{ id: string; lat: number; lng: number; type?: string }>,
+    mapInstance: maplibregl.Map
+  ) => {
+
+    markers.current.forEach(m => m.marker.remove())
+    markers.current.clear()
+
+    list.forEach(ev => {
+
+      const color = getEventDotColor(ev.type)
+      const shadow = getShadow(ev.type)
+
+      const el = document.createElement('div')
+
+      // ❗ FIX: NO transform animations (this caused drift illusion)
+      el.style.cssText = `
+        width: 14px;
+        height: 14px;
+        background: ${color};
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 10px ${shadow};
+        cursor: pointer;
+        transition: box-shadow 0.2s ease;
+        will-change: transform;
+      `
+
+      // SAFE hover (no scaling = no drift)
+      el.addEventListener('mouseenter', () => {
+        el.style.boxShadow = `0 0 18px ${shadow}`
+      })
+
+      el.addEventListener('mouseleave', () => {
+        el.style.boxShadow = `0 0 10px ${shadow}`
+      })
+
+      const marker = new maplibregl.Marker({
+        element: el,
+        anchor: 'center',
+        pitchAlignment: 'map',
+        rotationAlignment: 'map'
+      })
+        .setLngLat([ev.lng, ev.lat])
+        .addTo(mapInstance)
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+
+        const p = mapInstance.project([ev.lng, ev.lat])
+
+        setActiveEvent({
+          eventId: ev.id,
+          x: p.x,
+          y: p.y
+        })
+      })
+
+      markers.current.set(ev.id, {
+        id: ev.id,
+        lat: ev.lat,
+        lng: ev.lng,
+        type: ev.type,
+        marker
+      })
+    })
+  }
+
+  const updateEvents = (e: typeof events) => {
+    if (map.current?.loaded()) {
+      createEventMarkers(e, map.current)
+    }
+  }
+
+  const setGetEventDataFunction = (fn: GetEventDataFunction) => {
+    getEventDataFn.current = fn
+  }
+
   useImperativeHandle(ref, () => ({
     flyTo: (lat, lng) => {
-      map.current?.flyTo({ center: [lng, lat], zoom: 17, pitch: 60, duration: 1200 })
+      map.current?.flyTo({
+        center: [lng, lat],
+        zoom: 17,
+        pitch: 60,
+        duration: 1200
+      })
+      setActiveEvent(null)
     },
+    updateEvents,
+    setGetEventDataFunction
   }))
 
-  const UB_STADIUM_LNG = 106.9155
-  const UB_STADIUM_LAT = 47.9014
-  const CAMERA_CENTER_LNG = 106.9168
-  const CAMERA_CENTER_LAT = 47.9001
-  const HEIGHT_MARKER_LNG = 106.91762
-  const HEIGHT_MARKER_LAT = 47.89899
-  const HEIGHT_MARKER_METERS = 37.2
+  // ==================== INIT MAP ====================
 
   useEffect(() => {
     if (map.current || !mapContainer.current) return
 
-    const mainMap = new maplibregl.Map({
+    const m = new maplibregl.Map({
       container: mapContainer.current,
       style: createBaseMapStyle(),
-      center: [CAMERA_CENTER_LNG, CAMERA_CENTER_LAT],
-      zoom: 17.1,
+      center: [CENTER.lng, CENTER.lat],
+      zoom: 17,
       pitch: 68,
       bearing: -25,
-      canvasContextAttributes: { antialias: true },
+      pitchWithRotate: true
     })
-    map.current = mainMap
 
-    mainMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-left')
+    map.current = m
 
-    mainMap.on('load', () => {
-      // Stadium marker
+    m.addControl(new maplibregl.NavigationControl(), 'top-left')
+
+    m.on('load', () => {
+      add3DBuildings(m)
+
       const el = document.createElement('div')
-      el.style.cssText = `width:20px;height:20px;border-radius:50%;background:var(--primary);box-shadow:0 0 12px var(--primary);border:2px solid white`
+      el.style.cssText = `
+        width:20px;
+        height:20px;
+        border-radius:50%;
+        background:#f43f5e;
+        border:2px solid white;
+        box-shadow:0 0 12px rgba(244,63,94,0.6);
+      `
+
       new maplibregl.Marker({ element: el })
-        .setLngLat([UB_STADIUM_LNG, UB_STADIUM_LAT])
-        .setPopup(new maplibregl.Popup({ offset: 25 }).setText('Үндэсний спортын цэнгэлдэх хүрээлэн'))
-        .addTo(mainMap)
+        .setLngLat([UB.lng, UB.lat])
+        .setPopup(new maplibregl.Popup().setText('Үндэсний спортын цэнгэлдэх хүрээлэн'))
+        .addTo(m)
 
-      // Hotzone
-      if (!mainMap.getSource('hotzone')) {
-        mainMap.addSource('hotzone', {
-          type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'Polygon',
-              coordinates: [[[106.914, 47.902], [106.917, 47.902], [106.917, 47.900], [106.914, 47.900], [106.914, 47.902]]],
-            },
-          },
-        } as GeoJSONSourceSpecification)
-        mainMap.addLayer({ id: 'hotzone-layer', type: 'fill', source: 'hotzone', paint: { 'fill-color': HOTZONE_COLOR, 'fill-opacity': 0.28 } })
-      }
-
-      add3DBuildings(mainMap)
-
-      mainMap.on('click', BUILDING_LAYER_ID, (event: MapLayerMouseEvent) => {
-        const feature = event.features?.[0]
-        if (!feature) return
-        new maplibregl.Popup({ offset: 14 })
-          .setLngLat(event.lngLat)
-          .setDOMContent(createHeightPopupContent(feature))
-          .addTo(mainMap)
-      })
-      mainMap.on('mouseenter', BUILDING_LAYER_ID, () => { mainMap.getCanvas().style.cursor = 'pointer' })
-      mainMap.on('mouseleave', BUILDING_LAYER_ID, () => { mainMap.getCanvas().style.cursor = '' })
-
-      // Height tag marker
-      const heightTag = document.createElement('div')
-      heightTag.textContent = `${HEIGHT_MARKER_METERS} м`
-      heightTag.style.cssText = `padding:0.35rem 0.55rem;border-radius:999px;background:rgba(15,23,42,0.92);border:1px solid #4ade80;box-shadow:0 0 16px rgba(74,222,128,0.36);color:#f8fafc;font-size:0.78rem;font-weight:700;white-space:nowrap`
-      new maplibregl.Marker({ element: heightTag, anchor: 'bottom', offset: [0, -10] })
-        .setLngLat([HEIGHT_MARKER_LNG, HEIGHT_MARKER_LAT])
-        .setPopup(new maplibregl.Popup({ offset: 18 }).setText(`Барилгын өндөр: ${HEIGHT_MARKER_METERS} метр`))
-        .addTo(mainMap)
-
-      try {
-        if (mainMap.dragRotate) mainMap.dragRotate.enable()
-        if (mainMap.touchZoomRotate) mainMap.touchZoomRotate.enableRotation()
-        if (mainMap.doubleClickZoom) mainMap.doubleClickZoom.enable()
-      } catch { /* ignore */ }
+      if (events.length) createEventMarkers(events, m)
     })
 
     return () => {
-      mainMap.remove()
+      markers.current.forEach(m => m.marker.remove())
+      markers.current.clear()
+      m.remove()
       map.current = null
     }
   }, [])
 
-  return <div ref={mapContainer} className="absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
+  // update events
+  useEffect(() => {
+    if (map.current?.loaded()) {
+      createEventMarkers(events, map.current)
+    }
+  }, [events])
+
+  // keep card synced
+  useEffect(() => {
+    const m = map.current
+    if (!m) return
+
+    const update = () => {
+      if (!activeEvent) return
+      const marker = markers.current.get(activeEvent.eventId)
+      if (!marker) return
+
+      const p = m.project([marker.lng, marker.lat])
+      setActiveEvent(v => v ? { ...v, x: p.x, y: p.y } : null)
+    }
+
+    m.on('move', update)
+    return () => m.off('move', update)
+  }, [activeEvent])
+
+  return (
+    <>
+      <div ref={mapContainer} className="absolute inset-0 w-full h-full" />
+
+      {activeEvent && (
+        <EventCard
+          eventId={activeEvent.eventId}
+          x={activeEvent.x}
+          y={activeEvent.y}
+          onClose={() => setActiveEvent(null)}
+          onThreeDotClick={(id) => {
+            console.log(id)
+            setActiveEvent(null)
+          }}
+        />
+      )}
+    </>
+  )
 })
 
 export default MapComponent
