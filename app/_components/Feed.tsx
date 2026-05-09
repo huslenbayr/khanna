@@ -119,6 +119,7 @@ function PostList({
 const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSignal }, ref) {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
+  const [isOpen, setIsOpen] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -134,81 +135,35 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
 
   useEffect(() => { void load() }, [load, refreshSignal])
 
-  // Keep FeedHandle for compatibility — no snap behavior anymore
   useImperativeHandle(ref, () => ({
-    open:   () => {},
-    close:  () => {},
-    toggle: () => {},
+    open:   () => setIsOpen(true),
+    close:  () => setIsOpen(false),
+    toggle: () => setIsOpen(v => !v),
   }))
 
-  const panelStyle: React.CSSProperties = {
-    background: 'rgba(8,10,18,0.97)',
-    backdropFilter: 'blur(28px)',
-    WebkitBackdropFilter: 'blur(28px)',
-    borderTop: '1px solid var(--border-glass)',
-    borderRadius: '20px 20px 0 0',
-  }
-
-  const headerStyle: React.CSSProperties = {
-    borderBottom: '1px solid var(--border-glass)',
-  }
+  useEffect(() => {
+    const handler = () => setIsOpen(v => !v)
+    window.addEventListener('toggle-feed', handler)
+    return () => window.removeEventListener('toggle-feed', handler)
+  }, [])
 
   return (
-    <>
-      {/* ── Mobile: fixed panel at bottom, always visible, scrollable ── */}
-      <div
-        className="feed-mobile-panel md:hidden fixed left-0 right-0 z-20 flex flex-col"
-        style={{
-          bottom: 'var(--nav-h)',
-          ...panelStyle,
-        }}
-      >
-        <div className="flex items-center justify-between px-4 py-2.5 shrink-0" style={headerStyle}>
-          <span className="font-semibold text-sm">Feed</span>
-          <button
-            className="glass-button"
-            style={{ padding: '0.3rem 0.5rem', minHeight: 28, fontSize: '0.78rem' }}
-            onClick={() => void load()}
-            aria-label="Refresh"
-          >
-            <RefreshCw size={12} />
-          </button>
-        </div>
-        <div
-          className="flex-1 overflow-y-scroll flex flex-col gap-3 px-3 py-3"
-          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+    <div className={`feed-panel ${isOpen ? 'open' : ''} flex flex-col`}>
+      <div className="flex items-center justify-between px-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-border-glass)' }}>
+        <span className="font-bold text-base">Feed</span>
+        <button
+          className="glass-button"
+          style={{ padding: '0.4rem 0.6rem', minHeight: 32 }}
+          onClick={load}
+          aria-label="Refresh"
         >
-          <PostList posts={posts} loading={loading} onLocate={onLocate} />
-        </div>
+          <RefreshCw size={13} />
+        </button>
       </div>
-
-      {/* ── Desktop: always-visible right panel ── */}
-      <div
-        className="hidden md:flex fixed right-0 top-0 z-20 w-[360px] h-screen flex-col"
-        style={{
-          paddingTop: 'calc(var(--header-h) + 1rem)',
-          background: 'linear-gradient(to left, rgba(8,10,18,0.97), rgba(8,10,18,0.82))',
-          backdropFilter: 'blur(24px)',
-          WebkitBackdropFilter: 'blur(24px)',
-          borderLeft: '1px solid var(--border-glass)',
-        }}
-      >
-        <div className="flex items-center justify-between px-4 pb-3 shrink-0" style={headerStyle}>
-          <span className="font-bold text-base">Feed</span>
-          <button
-            className="glass-button"
-            style={{ padding: '0.4rem 0.6rem', minHeight: 32 }}
-            onClick={load}
-            aria-label="Refresh"
-          >
-            <RefreshCw size={13} />
-          </button>
-        </div>
-        <div className="flex-1 overflow-y-scroll flex flex-col gap-3 px-3 pt-3 pb-4">
-          <PostList posts={posts} loading={loading} onLocate={onLocate} />
-        </div>
+      <div className="flex-1 overflow-y-auto flex flex-col gap-3 px-3 pt-3 pb-4">
+        <PostList posts={posts} loading={loading} onLocate={onLocate} />
       </div>
-    </>
+    </div>
   )
 })
 

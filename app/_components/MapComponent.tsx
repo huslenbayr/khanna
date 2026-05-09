@@ -1,7 +1,8 @@
 'use client'
 
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
+import type { FeatureCollection, LineString } from 'geojson'
 import type {
   ExpressionSpecification,
   GeoJSONSourceSpecification,
@@ -10,6 +11,9 @@ import type {
   MapLayerMouseEvent,
   StyleSpecification
 } from 'maplibre-gl'
+import { Settings } from 'lucide-react'
+import type { CitizenReport, ReportCategory, ReportCoordinates, ReportStatus } from '../_types/citizenReport'
+import type { CommunityMember, CommunityStatus } from '../_types/community'
 
 const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN
 const CARTO_DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
@@ -17,9 +21,55 @@ const MAPBOX_STREETS_SOURCE_ID = 'mapbox-streets'
 const BUILDING_LAYER_ID = '3d-buildings'
 const BUILDING_HEIGHT_LABEL_LAYER_ID = 'building-height-labels'
 const HOTZONE_COLOR = '#f43f5e'
+const TRAFFIC_SOURCE_ID = 'khannaway-traffic-demo'
+const TRAFFIC_LAYER_ID = 'khannaway-traffic-lines'
 
 const buildingHeightExpression: ExpressionSpecification = ['case', ['has', 'height'], ['to-number', ['get', 'height']], 8]
 const buildingBaseExpression: ExpressionSpecification = ['case', ['has', 'min_height'], ['to-number', ['get', 'min_height']], 0]
+
+type MapComponentProps = {
+  reports?: CitizenReport[]
+  currentLocation?: ReportCoordinates | null
+  selectedReportId?: string | null
+  onReportSelect?: (reportId: string) => void
+  communityMembers?: CommunityMember[]
+  selectedCommunityMemberId?: number | null
+  onCommunityMemberSelect?: (memberId: number) => void
+}
+
+export type MapHandle = { flyTo: (lat: number, lng: number) => void }
+
+const statusColor: Record<ReportStatus, string> = {
+  Received: '#38bdf8',
+  Verified: '#4ade80',
+  'In Progress': '#f59e0b',
+  Resolved: '#94a3b8',
+}
+
+const categoryColor: Record<ReportCategory, string> = {
+  'Мөстсөн / халтиргаатай хэсэг': '#38bdf8',
+  'Замын нүх': '#f59e0b',
+  'Эвдэрсэн гэрэл': '#fde047',
+  'Хог / бохирдол': '#a3e635',
+  'Аюултай явган зам': '#f43f5e',
+  'Замын хөдөлгөөний асуудал': '#fb7185',
+  Бусад: '#94a3b8',
+}
+
+const communityStatusColor: Record<CommunityStatus, string> = {
+  Онлайн: '#4ade80',
+  Офлайн: '#64748b',
+  'Хамт байна': '#3b82f6',
+}
+
+const trafficDemoData: FeatureCollection<LineString, { level: 'low' | 'medium' | 'high' }> = {
+  type: 'FeatureCollection',
+  features: [
+    { type: 'Feature', properties: { level: 'high' }, geometry: { type: 'LineString', coordinates: [[106.889, 47.914], [106.903, 47.916], [106.918, 47.918], [106.935, 47.920], [106.951, 47.923]] } },
+    { type: 'Feature', properties: { level: 'medium' }, geometry: { type: 'LineString', coordinates: [[106.910, 47.930], [106.918, 47.922], [106.927, 47.913], [106.938, 47.903]] } },
+    { type: 'Feature', properties: { level: 'low' }, geometry: { type: 'LineString', coordinates: [[106.857, 47.914], [106.875, 47.914], [106.894, 47.915], [106.908, 47.916]] } },
+  ],
+}
 
 const createBaseMapStyle = (): string | StyleSpecification => {
   if (!MAPBOX_ACCESS_TOKEN) return CARTO_DARK_STYLE
@@ -27,26 +77,15 @@ const createBaseMapStyle = (): string | StyleSpecification => {
     version: 8,
     glyphs: `https://api.mapbox.com/fonts/v1/mapbox/{fontstack}/{range}.pbf?access_token=${MAPBOX_ACCESS_TOKEN}`,
     sources: {
-      mapbox: {
-        type: 'raster',
-        tiles: [`https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_ACCESS_TOKEN}`],
-        tileSize: 256,
-        attribution: '© Mapbox © OpenStreetMap',
-      },
-      [MAPBOX_STREETS_SOURCE_ID]: {
-        type: 'vector',
-        tiles: [`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/{z}/{x}/{y}.mvt?access_token=${MAPBOX_ACCESS_TOKEN}`],
-        minzoom: 0,
-        maxzoom: 16,
-      },
+      mapbox: { type: 'raster', tiles: [`https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_ACCESS_TOKEN}`], tileSize: 256, attribution: '© Mapbox © OpenStreetMap' },
+      [MAPBOX_STREETS_SOURCE_ID]: { type: 'vector', tiles: [`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/{z}/{x}/{y}.mvt?access_token=${MAPBOX_ACCESS_TOKEN}`], minzoom: 0, maxzoom: 16 }
     },
-    layers: [{ id: 'mapbox', type: 'raster', source: 'mapbox' }],
+    layers: [{ id: 'mapbox', type: 'raster', source: 'mapbox' }]
   } as StyleSpecification
 }
 
 const add3DBuildings = (targetMap: maplibregl.Map) => {
   if (!MAPBOX_ACCESS_TOKEN || targetMap.getLayer(BUILDING_LAYER_ID)) return
-
   targetMap.addLayer({
     id: BUILDING_LAYER_ID,
     type: 'fill-extrusion',
@@ -58,8 +97,8 @@ const add3DBuildings = (targetMap: maplibregl.Map) => {
       'fill-extrusion-color': ['interpolate', ['linear'], buildingHeightExpression, 0, '#38bdf8', 12, '#4ade80', 32, '#f59e0b', 70, '#f43f5e'],
       'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.25, buildingHeightExpression],
       'fill-extrusion-base': buildingBaseExpression,
-      'fill-extrusion-opacity': 0.86,
-    },
+      'fill-extrusion-opacity': 0.86
+    }
   } as LayerSpecification)
 
   targetMap.addLayer({
@@ -70,19 +109,14 @@ const add3DBuildings = (targetMap: maplibregl.Map) => {
     minzoom: 16,
     filter: ['all', ['!=', ['get', 'underground'], 'true'], ['==', ['get', 'extrude'], 'true']],
     layout: {
-      'text-field': ['concat', ['to-string', ['round', buildingHeightExpression]], ' м'],
+      'text-field': ['concat', ['to-number', ['round', buildingHeightExpression]], ' м'],
       'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
       'text-size': 11,
       'text-anchor': 'center',
       'text-allow-overlap': false,
-      'symbol-placement': 'point',
+      'symbol-placement': 'point'
     },
-    paint: {
-      'text-color': '#f8fafc',
-      'text-halo-color': '#020617',
-      'text-halo-width': 1.5,
-      'text-halo-blur': 0.25,
-    },
+    paint: { 'text-color': '#f8fafc', 'text-halo-color': '#020617', 'text-halo-width': 1.5, 'text-halo-blur': 0.25 }
   } as LayerSpecification)
 }
 
@@ -92,22 +126,33 @@ const createHeightPopupContent = (feature: MapGeoJSONFeature) => {
   const buildingType = typeof feature?.properties?.type === 'string' ? feature.properties.type : 'building'
   const wrapper = document.createElement('div')
   wrapper.style.cssText = 'display:grid;gap:0.25rem'
-  const t = document.createElement('strong')
-  t.textContent = 'Барилгын өндөр'
-  const h = document.createElement('span')
-  h.textContent = rounded === null ? 'Өндрийн мэдээлэл алга' : `${rounded} м`
-  const s = document.createElement('small')
-  s.style.color = '#94a3b8'
-  s.textContent = `Төрөл: ${buildingType}`
+  const t = document.createElement('strong'); t.textContent = 'Барилгын өндөр'
+  const h = document.createElement('span'); h.textContent = rounded === null ? 'Өндрийн мэдээлэл алга' : `${rounded} м`
+  const s = document.createElement('small'); s.style.color = '#94a3b8'; s.textContent = `Төрөл: ${buildingType}`
   wrapper.append(t, h, s)
   return wrapper
 }
 
-export type MapHandle = { flyTo: (lat: number, lng: number) => void }
-
-const MapComponent = forwardRef<MapHandle>(function MapComponent(_, ref) {
+const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
+  reports = [],
+  currentLocation = null,
+  selectedReportId = null,
+  onReportSelect,
+  communityMembers = [],
+  selectedCommunityMemberId = null,
+  onCommunityMemberSelect,
+}, ref) => {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const map = useRef<maplibregl.Map | null>(null)
+  const reportMarkers = useRef<maplibregl.Marker[]>([])
+  const communityMarkers = useRef<maplibregl.Marker[]>([])
+  const currentLocationMarker = useRef<maplibregl.Marker | null>(null)
+  const onReportSelectRef = useRef(onReportSelect)
+  const onCommunityMemberSelectRef = useRef(onCommunityMemberSelect)
+  const [ready, setReady] = useState(false)
+  const [buildingsReady, setBuildingsReady] = useState(false)
+  const [mapMode, setMapMode] = useState<'3d' | '2d'>('3d')
+  const [showControls, setShowControls] = useState(false)
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat, lng) => {
@@ -115,76 +160,71 @@ const MapComponent = forwardRef<MapHandle>(function MapComponent(_, ref) {
     },
   }))
 
+  const CAMERA_CENTER_LNG = 106.9176
+  const CAMERA_CENTER_LAT = 47.9189
   const UB_STADIUM_LNG = 106.9155
   const UB_STADIUM_LAT = 47.9014
-  const CAMERA_CENTER_LNG = 106.9168
-  const CAMERA_CENTER_LAT = 47.9001
-  const HEIGHT_MARKER_LNG = 106.91762
-  const HEIGHT_MARKER_LAT = 47.89899
-  const HEIGHT_MARKER_METERS = 37.2
+
+  useEffect(() => {
+    onReportSelectRef.current = onReportSelect
+    onCommunityMemberSelectRef.current = onCommunityMemberSelect
+  }, [onReportSelect, onCommunityMemberSelect])
+
+  useEffect(() => {
+    const handleToggle = () => setShowControls(prev => !prev)
+    window.addEventListener('toggle-map-controls', handleToggle)
+    return () => window.removeEventListener('toggle-map-controls', handleToggle)
+  }, [])
 
   useEffect(() => {
     if (map.current || !mapContainer.current) return
-
     const mainMap = new maplibregl.Map({
       container: mapContainer.current,
       style: createBaseMapStyle(),
       center: [CAMERA_CENTER_LNG, CAMERA_CENTER_LAT],
-      zoom: 17.1,
-      pitch: 68,
-      bearing: -25,
-      canvasContextAttributes: { antialias: true },
+      zoom: 16,
+      pitch: 54,
+      bearing: -18,
+      canvasContextAttributes: { antialias: true }
     })
     map.current = mainMap
-
-    mainMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-left')
+    mainMap.addControl(new maplibregl.NavigationControl({ showCompass: true }), 'top-right')
 
     mainMap.on('load', () => {
-      // Stadium marker
-      const el = document.createElement('div')
-      el.style.cssText = `width:20px;height:20px;border-radius:50%;background:var(--primary);box-shadow:0 0 12px var(--primary);border:2px solid white`
-      new maplibregl.Marker({ element: el })
-        .setLngLat([UB_STADIUM_LNG, UB_STADIUM_LAT])
-        .setPopup(new maplibregl.Popup({ offset: 25 }).setText('Үндэсний спортын цэнгэлдэх хүрээлэн'))
-        .addTo(mainMap)
-
+      setReady(true)
+      
       // Hotzone
       if (!mainMap.getSource('hotzone')) {
         mainMap.addSource('hotzone', {
           type: 'geojson',
-          data: {
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'Polygon',
-              coordinates: [[[106.914, 47.902], [106.917, 47.902], [106.917, 47.900], [106.914, 47.900], [106.914, 47.902]]],
-            },
-          },
+          data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[106.914, 47.902], [106.954, 47.924], [106.938, 47.890], [106.890, 47.895], [106.914, 47.902]]] } }
         } as GeoJSONSourceSpecification)
         mainMap.addLayer({ id: 'hotzone-layer', type: 'fill', source: 'hotzone', paint: { 'fill-color': HOTZONE_COLOR, 'fill-opacity': 0.28 } })
       }
 
-      add3DBuildings(mainMap)
+      // Traffic
+      if (!mainMap.getSource(TRAFFIC_SOURCE_ID)) {
+        mainMap.addSource(TRAFFIC_SOURCE_ID, { type: 'geojson', data: trafficDemoData } as GeoJSONSourceSpecification)
+        mainMap.addLayer({
+          id: TRAFFIC_LAYER_ID, type: 'line', source: TRAFFIC_SOURCE_ID,
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': ['match', ['get', 'level'], 'high', '#ef4444', 'medium', '#f59e0b', 'low', '#22c55e', '#94a3b8'],
+            'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3, 14, 8, 16, 13],
+            'line-opacity': 0.86,
+          }
+        } as LayerSpecification)
+      }
 
+      add3DBuildings(mainMap)
       mainMap.on('click', BUILDING_LAYER_ID, (event: MapLayerMouseEvent) => {
         const feature = event.features?.[0]
         if (!feature) return
-        new maplibregl.Popup({ offset: 14 })
-          .setLngLat(event.lngLat)
-          .setDOMContent(createHeightPopupContent(feature))
-          .addTo(mainMap)
+        new maplibregl.Popup({ offset: 14 }).setLngLat(event.lngLat).setDOMContent(createHeightPopupContent(feature)).addTo(mainMap)
       })
       mainMap.on('mouseenter', BUILDING_LAYER_ID, () => { mainMap.getCanvas().style.cursor = 'pointer' })
       mainMap.on('mouseleave', BUILDING_LAYER_ID, () => { mainMap.getCanvas().style.cursor = '' })
-
-      // Height tag marker
-      const heightTag = document.createElement('div')
-      heightTag.textContent = `${HEIGHT_MARKER_METERS} м`
-      heightTag.style.cssText = `padding:0.35rem 0.55rem;border-radius:999px;background:rgba(15,23,42,0.92);border:1px solid #4ade80;box-shadow:0 0 16px rgba(74,222,128,0.36);color:#f8fafc;font-size:0.78rem;font-weight:700;white-space:nowrap`
-      new maplibregl.Marker({ element: heightTag, anchor: 'bottom', offset: [0, -10] })
-        .setLngLat([HEIGHT_MARKER_LNG, HEIGHT_MARKER_LAT])
-        .setPopup(new maplibregl.Popup({ offset: 18 }).setText(`Барилгын өндөр: ${HEIGHT_MARKER_METERS} метр`))
-        .addTo(mainMap)
+      setBuildingsReady(true)
 
       try {
         if (mainMap.dragRotate) mainMap.dragRotate.enable()
@@ -199,7 +239,110 @@ const MapComponent = forwardRef<MapHandle>(function MapComponent(_, ref) {
     }
   }, [])
 
-  return <div ref={mapContainer} className="absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
+  const switchMapMode = () => {
+    if (!map.current) return
+    const nextMode = mapMode === '3d' ? '2d' : '3d'
+    setMapMode(nextMode)
+    map.current.easeTo({ pitch: nextMode === '3d' ? 54 : 0, bearing: nextMode === '3d' ? -18 : 0, duration: 650 })
+  }
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+    reportMarkers.current.forEach(m => m.remove())
+    reportMarkers.current = reports.map(report => {
+      const el = document.createElement('button')
+      el.style.cssText = `width:${selectedReportId === report.id ? '26px' : '21px'};height:${selectedReportId === report.id ? '26px' : '21px'};border-radius:50%;border:2px solid white;background:${statusColor[report.status] || categoryColor[report.category]};cursor:pointer;padding:0`
+      el.onclick = () => onReportSelectRef.current?.(report.id)
+      return new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([report.coordinates.lng, report.coordinates.lat]).addTo(map.current!)
+    })
+  }, [ready, reports, selectedReportId])
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+    communityMarkers.current.forEach(m => m.remove())
+    communityMarkers.current = communityMembers.map(member => {
+      const el = document.createElement('button')
+      el.textContent = member.name.slice(0, 1).toUpperCase()
+      el.style.cssText = `width:${selectedCommunityMemberId === member.id ? '31px' : '25px'};height:${selectedCommunityMemberId === member.id ? '31px' : '25px'};border-radius:50%;border:2px solid white;background:${communityStatusColor[member.status]};color:#06111a;cursor:pointer;padding:0;font-weight:800;font-size:0.78rem`
+      el.onclick = () => onCommunityMemberSelectRef.current?.(member.id)
+      return new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat([member.coordinates.lng, member.coordinates.lat]).addTo(map.current!)
+    })
+  }, [communityMembers, ready, selectedCommunityMemberId])
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+    const ctrlGroup = document.querySelector('.maplibregl-ctrl-top-right .maplibregl-ctrl-group')
+    if (!ctrlGroup) return
+
+    const btn = document.createElement('button')
+    btn.className = 'maplibregl-ctrl-icon custom-ctrl-settings'
+    btn.type = 'button'
+    btn.title = 'Map Controls'
+    btn.style.cssText = `display:flex;align-items:center;justify-content:center;width:29px;height:29px;border-top:1px solid #ddd;outline:none;background:none;border-left:none;border-right:none;border-bottom:none;cursor:pointer`
+    
+    // SVG for Settings icon
+    btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>`
+    
+    btn.onclick = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      window.dispatchEvent(new CustomEvent('toggle-map-controls'))
+    }
+
+    ctrlGroup.appendChild(btn)
+
+    return () => {
+      btn.remove()
+    }
+  }, [ready])
+
+  useEffect(() => {
+    if (!ready || !map.current) return
+    currentLocationMarker.current?.remove()
+    if (!currentLocation) return
+    const el = document.createElement('div')
+    el.style.cssText = `width:20px;height:20px;border-radius:50%;background:rgba(74,222,128,0.9);border:2px solid white;box-shadow:0 0 0 8px rgba(74,222,128,0.16)`
+    currentLocationMarker.current = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([currentLocation.lng, currentLocation.lat]).addTo(map.current)
+  }, [ready, currentLocation])
+
+  return (
+    <>
+      <div ref={mapContainer} className="absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
+      
+      {showControls && (
+        <div className="glass-panel overlay-panel animate-fade-in" style={{ top: '5.25rem', right: '3.75rem', width: 220, padding: '0.85rem', display: 'grid', gap: '0.6rem', zIndex: 10 }}>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Map View</div>
+          <div style={{ fontSize: '0.9rem', fontWeight: 700, color: buildingsReady ? 'var(--primary)' : 'var(--text-muted)' }}>
+            {mapMode === '3d' ? '3D Харагдац' : '2D Харагдац'}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+            <button className="glass-button active" type="button" onClick={switchMapMode} style={{ justifyContent: 'center', padding: '0.5rem', fontSize: '0.75rem' }}>
+              {mapMode === '3d' ? '2D' : '3D'}
+            </button>
+            <button 
+              className="glass-button" 
+              type="button" 
+              onClick={() => {
+                if (!navigator.geolocation) return
+                navigator.geolocation.getCurrentPosition((pos) => {
+                  window.dispatchEvent(new CustomEvent('update-location', { 
+                    detail: { lat: pos.coords.latitude, lng: pos.coords.longitude } 
+                  }))
+                })
+              }} 
+              style={{ justifyContent: 'center', padding: '0.5rem', fontSize: '0.75rem' }}
+            >
+              GPS
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '0.45rem', alignItems: 'center', color: 'var(--text-muted)', fontSize: '0.7rem' }}>
+            <span style={{ width: 12, height: 4, borderRadius: 999, background: '#ef4444' }} />
+            <span>Замын ачаалал</span>
+          </div>
+        </div>
+      )}
+    </>
+  )
 })
 
 export default MapComponent
