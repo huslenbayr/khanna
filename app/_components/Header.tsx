@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth-context'
 
 export default function Header() {
   const pathname = usePathname()
-  const { user } = useAuth()
+  const { user, avatarUrl } = useAuth()
 
   const handleLogout = async () => {
     const supabase = createClient()
@@ -44,10 +44,19 @@ export default function Header() {
       <div className="flex items-center gap-2">
         {user ? (
           <>
-            <span className="flex items-center gap-1 text-[0.8rem] text-[var(--text-muted)]">
-              <User size={13} />
+            <Link
+              href={`/profile/${user.id}`}
+              className="flex items-center gap-1.5 no-underline text-[0.8rem] text-[var(--text-muted)] hover:text-[var(--primary)] transition-colors"
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="rounded-full object-cover shrink-0" style={{ width: 24, height: 24 }} />
+              ) : (
+                <div className="rounded-full flex items-center justify-center shrink-0" style={{ width: 24, height: 24, background: 'rgba(74,222,128,0.12)', border: '1px solid var(--border-glass)' }}>
+                  <User size={13} className="text-[var(--primary)]" />
+                </div>
+              )}
               <span className="header-email">{user.email}</span>
-            </span>
+            </Link>
             <button className="glass-button" onClick={handleLogout} style={{ padding: '0.5rem 0.75rem' }}>
               <LogOut size={14} />
               <span className="header-logout-label">Гарах</span>

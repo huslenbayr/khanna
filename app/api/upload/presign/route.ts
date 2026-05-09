@@ -5,9 +5,10 @@ import { NextResponse } from 'next/server'
 import { randomUUID } from 'crypto'
 
 export async function POST(request: Request) {
-  const { fileName, contentType } = await request.json() as { fileName: string; contentType: string }
+  const { fileName, contentType, type } = await request.json() as { fileName: string; contentType: string; type?: string }
   const ext = fileName.split('.').pop() ?? 'bin'
-  const key = `posts/${randomUUID()}.${ext}`
+  const folder = type === 'avatar' ? 'avatars' : 'posts'
+  const key = `${folder}/${randomUUID()}.${ext}`
 
   const command = new PutObjectCommand({
     Bucket: process.env.R2_BUCKET_NAME!,
