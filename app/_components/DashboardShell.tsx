@@ -71,11 +71,19 @@ export default function DashboardShell() {
 
   const selectedReport = reports.find(r => r.id === selectedReportId) || null
 
+  const mockEvents = [
+    { id: 'evt_1', lat: 47.9155, lng: 106.9155, type: 'music' },
+    { id: 'evt_2', lat: 47.9220, lng: 106.9180, type: 'tech' },
+    { id: 'evt_3', lat: 47.9100, lng: 106.9250, type: 'art' },
+    { id: 'food_1', lat: 47.9180, lng: 106.9050, type: 'food' },
+    { id: 'sports_1', lat: 47.9050, lng: 106.9150, type: 'sports' },
+  ]
+
   return (
-    <div className="dash">
-      <div className="dash-map">
-        <MapComponent 
-          ref={mapRef} 
+    <div className="dashboard-shell h-screen overflow-hidden relative">
+      <div className="absolute inset-0 z-0">
+        <MapComponent
+          ref={mapRef}
           reports={reports}
           selectedReportId={selectedReportId}
           onReportSelect={setSelectedReportId}
@@ -83,6 +91,7 @@ export default function DashboardShell() {
           selectedCommunityMemberId={selectedMemberId}
           onCommunityMemberSelect={setSelectedMemberId}
           currentLocation={currentLocation}
+          events={mockEvents}
         />
       </div>
 

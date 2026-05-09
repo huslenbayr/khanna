@@ -12,6 +12,7 @@ import type {
   StyleSpecification
 } from 'maplibre-gl'
 import { Settings } from 'lucide-react'
+import EventCard from './EventCard'
 import type { CitizenReport, ReportCategory, ReportCoordinates, ReportStatus } from '../_types/citizenReport'
 import type { CommunityMember, CommunityStatus } from '../_types/community'
 
@@ -35,6 +36,7 @@ type MapComponentProps = {
   communityMembers?: CommunityMember[]
   selectedCommunityMemberId?: number | null
   onCommunityMemberSelect?: (memberId: number) => void
+  events?: Array<{ id: string; lat: number; lng: number; type?: string }>
 }
 
 export type MapHandle = { flyTo: (lat: number, lng: number) => void }
@@ -60,6 +62,19 @@ const communityStatusColor: Record<CommunityStatus, string> = {
   Онлайн: '#4ade80',
   Офлайн: '#64748b',
   'Хамт байна': '#3b82f6',
+}
+
+const getEventDotColor = (type?: string): string => {
+  const map: Record<string, string> = {
+    music: '#f43f5e',
+    tech: '#3b82f6',
+    art: '#a855f7',
+    sports: '#22c55e',
+    food: '#f97316',
+    workshop: '#eab308',
+    default: '#6b7280'
+  }
+  return map[type || 'default'] || map.default
 }
 
 const trafficDemoData: FeatureCollection<LineString, { level: 'low' | 'medium' | 'high' }> = {
@@ -141,11 +156,13 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
   communityMembers = [],
   selectedCommunityMemberId = null,
   onCommunityMemberSelect,
+  events = [],
 }, ref) => {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const map = useRef<maplibregl.Map | null>(null)
   const reportMarkers = useRef<maplibregl.Marker[]>([])
   const communityMarkers = useRef<maplibregl.Marker[]>([])
+  const eventMarkers = useRef<Map<string, maplibregl.Marker>>(new Map())
   const currentLocationMarker = useRef<maplibregl.Marker | null>(null)
   const onReportSelectRef = useRef(onReportSelect)
   const onCommunityMemberSelectRef = useRef(onCommunityMemberSelect)
@@ -153,6 +170,7 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
   const [buildingsReady, setBuildingsReady] = useState(false)
   const [mapMode, setMapMode] = useState<'3d' | '2d'>('3d')
   const [showControls, setShowControls] = useState(false)
+  const [activeEvent, setActiveEvent] = useState<{ eventId: string; x: number; y: number } | null>(null)
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat, lng) => {
@@ -193,29 +211,6 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
     mainMap.on('load', () => {
       setReady(true)
       
-      // Hotzone
-      if (!mainMap.getSource('hotzone')) {
-        mainMap.addSource('hotzone', {
-          type: 'geojson',
-          data: { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[[106.914, 47.902], [106.954, 47.924], [106.938, 47.890], [106.890, 47.895], [106.914, 47.902]]] } }
-        } as GeoJSONSourceSpecification)
-        mainMap.addLayer({ id: 'hotzone-layer', type: 'fill', source: 'hotzone', paint: { 'fill-color': HOTZONE_COLOR, 'fill-opacity': 0.28 } })
-      }
-
-      // Traffic
-      if (!mainMap.getSource(TRAFFIC_SOURCE_ID)) {
-        mainMap.addSource(TRAFFIC_SOURCE_ID, { type: 'geojson', data: trafficDemoData } as GeoJSONSourceSpecification)
-        mainMap.addLayer({
-          id: TRAFFIC_LAYER_ID, type: 'line', source: TRAFFIC_SOURCE_ID,
-          layout: { 'line-cap': 'round', 'line-join': 'round' },
-          paint: {
-            'line-color': ['match', ['get', 'level'], 'high', '#ef4444', 'medium', '#f59e0b', 'low', '#22c55e', '#94a3b8'],
-            'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3, 14, 8, 16, 13],
-            'line-opacity': 0.86,
-          }
-        } as LayerSpecification)
-      }
-
       add3DBuildings(mainMap)
       mainMap.on('click', BUILDING_LAYER_ID, (event: MapLayerMouseEvent) => {
         const feature = event.features?.[0]
@@ -305,10 +300,87 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
     currentLocationMarker.current = new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat([currentLocation.lng, currentLocation.lat]).addTo(map.current)
   }, [ready, currentLocation])
 
+  // Sync Events (Dots)
+  useEffect(() => {
+    if (!ready || !map.current) return
+
+    // Clean old
+    eventMarkers.current.forEach(m => m.remove())
+    eventMarkers.current.clear()
+
+    // Add new
+    events.forEach(ev => {
+      const color = getEventDotColor(ev.type)
+      const el = document.createElement('div')
+      
+      // Fixed drift style: focus on shadow only, no transform transitions
+      el.style.cssText = `
+        width: 14px;
+        height: 14px;
+        background: ${color};
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 10px ${color}99;
+        cursor: pointer;
+        transition: box-shadow 0.2s ease;
+      `
+      
+      el.addEventListener('mouseenter', () => {
+        el.style.boxShadow = `0 0 20px ${color}, 0 0 35px ${color}66`
+      })
+      
+      el.addEventListener('mouseleave', () => {
+        el.style.boxShadow = `0 0 10px ${color}99`
+      })
+      
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        if (!map.current) return
+        const p = map.current.project([ev.lng, ev.lat])
+        setActiveEvent({ eventId: ev.id, x: p.x, y: p.y })
+      })
+
+      const marker = new maplibregl.Marker({ 
+        element: el, 
+        anchor: 'center',
+        pitchAlignment: 'map',
+        rotationAlignment: 'map'
+      })
+        .setLngLat([ev.lng, ev.lat])
+        .addTo(map.current!)
+      
+      eventMarkers.current.set(ev.id, marker)
+    })
+  }, [ready, events])
+
+  // Keep active event card synced with map movement
+  useEffect(() => {
+    if (!ready || !map.current || !activeEvent) return
+    const update = () => {
+      const marker = eventMarkers.current.get(activeEvent.eventId)
+      if (marker && map.current) {
+        const p = map.current.project(marker.getLngLat())
+        setActiveEvent(prev => prev ? { ...prev, x: p.x, y: p.y } : null)
+      }
+    }
+    map.current.on('move', update)
+    return () => { map.current?.off('move', update) }
+  }, [ready, activeEvent])
+
   return (
     <>
       <div ref={mapContainer} className="absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
       
+      {activeEvent && (
+        <EventCard
+          eventId={activeEvent.eventId}
+          x={activeEvent.x}
+          y={activeEvent.y}
+          onClose={() => setActiveEvent(null)}
+          onThreeDotClick={(id) => { console.log('Action for event:', id); setActiveEvent(null); }}
+        />
+      )}
+
       {showControls && (
         <div className="glass-panel overlay-panel animate-fade-in" style={{ top: '5.25rem', right: '3.75rem', width: 220, padding: '0.85rem', display: 'grid', gap: '0.6rem', zIndex: 10 }}>
           <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Map View</div>
