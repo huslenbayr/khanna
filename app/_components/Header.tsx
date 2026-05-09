@@ -1,89 +1,182 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { LogOut, User, Menu, X } from 'lucide-react'
+import { ChevronDown, LogOut, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/auth-context'
 
 export default function Header() {
-  const pathname = usePathname()
-  const { user } = useAuth()
-  const [collapsed, setCollapsed] = useState(true)
+  const { user, avatarUrl } = useAuth()
+  const [menuOpen, setMenuOpen] = useState(false)   // KhannaWay dropdown
+  const [userOpen, setUserOpen] = useState(false)   // Avatar dropdown
+  const menuRef = useRef<HTMLDivElement>(null)
+  const userRef = useRef<HTMLDivElement>(null)
 
   const handleLogout = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
+    setUserOpen(false)
+  }
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false)
+      if (userRef.current && !userRef.current.contains(e.target as Node)) setUserOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const dropdownStyle: React.CSSProperties = {
+    position: 'absolute',
+    top: 'calc(100% + 10px)',
+    minWidth: 200,
+    background: 'rgba(10,12,18,0.97)',
+    backdropFilter: 'blur(32px)',
+    WebkitBackdropFilter: 'blur(32px)',
+    border: '1px solid var(--border-glass)',
+    borderRadius: 14,
+    boxShadow: '0 8px 40px rgba(0,0,0,0.5)',
+    zIndex: 999,
+    padding: '0.4rem',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+  }
+
+  const dropItemStyle: React.CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    width: '100%',
+    textAlign: 'left',
+    padding: '0.6rem 0.75rem',
+    borderRadius: 10,
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    color: 'var(--text-main)',
+    fontSize: '0.88rem',
+    fontFamily: 'inherit',
+    transition: 'background 0.15s',
+    textDecoration: 'none',
   }
 
   return (
-    <header style={{ position: 'absolute', top: 12, left: 12, right: 12, zIndex: 40, display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-            <Link href="/" style={{ textDecoration: 'none' }}>
-              <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--primary)' }}>KhannaWay</div>
-            </Link>
-          </div>
-        </div>
-
-        <button className="glass-button active hidden md:flex" onClick={() => setCollapsed(!collapsed)} style={{ alignItems: 'center', justifyContent: 'center', width: 40, height: 40, padding: 0 }} aria-expanded={!collapsed} aria-label="Toggle menu">
-          {collapsed ? <Menu size={20} /> : <X size={20} />}
-        </button>
-      </div>
-
-      <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 12 }}>
-        {/* 
-          Using Tailwind classes exclusively for display to avoid inline-style specificity issues.
-          - 'hidden': Always hidden on mobile.
-          - 'md:flex' / 'md:hidden': Toggle visibility based on state for desktop only.
-        */}
-        <nav 
-          className={`hidden md:${collapsed ? 'hidden' : 'flex'}`}
-          style={{ 
-            flexWrap: 'wrap', 
-            gap: 8, 
-            alignItems: 'center' 
-          }}
+    <header
+      className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 md:px-6"
+      style={{
+        height: 'var(--header-h)',
+        background: 'var(--header-bg)',
+        backdropFilter: 'blur(24px)',
+        WebkitBackdropFilter: 'blur(24px)',
+        borderBottom: '1px solid var(--border-glass)',
+      }}
+    >
+      {/* Left: KhannaWay dropdown */}
+      <div className="relative" ref={menuRef}>
+        <button
+          style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+          onClick={() => { setMenuOpen(prev => !prev); setUserOpen(false) }}
+          aria-label="Open menu"
         >
-          <Link href="/" style={{ textDecoration: 'none' }}>
-            <button className="glass-button active">
-              Нүүр
-            </button>
-          </Link>
-          <Link href="/dashboard" style={{ textDecoration: 'none' }}>
-            <button 
-              className={`glass-button ${pathname.startsWith('/dashboard') ? 'active' : ''}`}
-              onClick={() => window.dispatchEvent(new CustomEvent('toggle-feed'))}
+          <span className="site-header-logo" style={{ pointerEvents: 'none' }}>
+            <span className="dot" />
+            KhannaWay
+          </span>
+          <ChevronDown
+            size={16}
+            className="text-[var(--text-muted)]"
+            style={{ transition: 'transform 0.2s', transform: menuOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          />
+        </button>
+
+        {menuOpen && (
+          <div style={{ ...dropdownStyle, left: 0 }}>
+            <button
+              style={dropItemStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              onClick={() => { window.dispatchEvent(new CustomEvent('toggle-feed')); setMenuOpen(false) }}
             >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--primary)', flexShrink: 0 }} />
               Social Feed
             </button>
+            <button
+              style={dropItemStyle}
+              onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+              onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              onClick={() => { window.dispatchEvent(new CustomEvent('toggle-city')); setMenuOpen(false) }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#60a5fa', flexShrink: 0 }} />
+              Хотын мэдээлэл
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Right: Avatar dropdown */}
+      <div className="relative" ref={userRef}>
+        {user ? (
+          <>
+            <button
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => { setUserOpen(prev => !prev); setMenuOpen(false) }}
+              aria-label="User menu"
+            >
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" className="rounded-full object-cover" style={{ width: 30, height: 30, border: '1px solid var(--border-glass)' }} />
+              ) : (
+                <div className="rounded-full flex items-center justify-center" style={{ width: 30, height: 30, background: 'rgba(74,222,128,0.12)', border: '1px solid var(--border-glass)' }}>
+                  <User size={15} className="text-[var(--primary)]" />
+                </div>
+              )}
+              <ChevronDown
+                size={14}
+                className="text-[var(--text-muted)]"
+                style={{ transition: 'transform 0.2s', transform: userOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+              />
+            </button>
+
+            {userOpen && (
+              <div style={{ ...dropdownStyle, right: 0 }}>
+                {/* Email label */}
+                <div style={{ padding: '0.4rem 0.75rem 0.5rem', borderBottom: '1px solid var(--border-glass)', marginBottom: 2 }}>
+                  <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-muted)' }}>{user.email}</p>
+                </div>
+                {/* Profile */}
+                <Link
+                  href={`/profile/${user.id}`}
+                  style={dropItemStyle}
+                  onClick={() => setUserOpen(false)}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                >
+                  <User size={15} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                  Профайл
+                </Link>
+                {/* Logout */}
+                <button
+                  style={dropItemStyle}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.05)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                  onClick={handleLogout}
+                >
+                  <LogOut size={15} style={{ color: '#f87171', flexShrink: 0 }} />
+                  <span style={{ color: '#f87171' }}>Гарах</span>
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <Link href="/auth" style={{ textDecoration: 'none' }}>
+            <button className="glass-button active" style={{ fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <User size={14} /> Нэвтрэх
+            </button>
           </Link>
-
-          <button className="glass-button active" onClick={() => window.dispatchEvent(new CustomEvent('toggle-city'))}>
-            Хотын мэдээлэл
-          </button>
-
-          {user ? (
-            <>
-              <span className="flex items-center gap-1 text-[0.8rem] text-[var(--text-muted)]" style={{ marginLeft: 8 }}>
-                <User size={13} />
-                <span className="header-email">{user.email}</span>
-              </span>
-              <button className="glass-button" onClick={handleLogout}>
-                <LogOut size={14} />
-                Гарах
-              </button>
-            </>
-          ) : (
-            <Link href="/auth" style={{ textDecoration: 'none' }}>
-              <button className="glass-button active">
-                <User size={14} /> Нэвтрэх
-              </button>
-            </Link>
-          )}
-        </nav>
+        )}
       </div>
     </header>
   )

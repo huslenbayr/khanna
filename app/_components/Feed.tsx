@@ -1,125 +1,25 @@
 'use client'
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react'
-import { MapPin, RefreshCw, User } from 'lucide-react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { RefreshCw, X } from 'lucide-react'
+import PostCard, { type Post } from './PostCard'
 
-type Post = {
-  id: string
-  title: string | null
-  caption: string | null
-  media_url: string
-  media_type: 'photo' | 'video'
-  lat: number
-  lng: number
-  location_name: string | null
-  post_type: string | null
-  created_at: string
-  author: { name: string; phone: string | null } | null
-}
-
-const TYPE_META: Record<string, { label: string; color: string }> = {
-  info:     { label: 'Мэдээлэл',       color: '#38bdf8' },
-  issue:    { label: 'Асуудал',         color: '#f87171' },
-  landmark: { label: 'Онцгой газар',   color: '#a78bfa' },
-  event:    { label: 'Арга хэмжээ',    color: '#4ade80' },
-  safety:   { label: 'Аюулгүй байдал', color: '#fb923c' },
-}
-
-const fmt = (iso: string) => {
-  const m = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
-  if (m < 1) return 'Дөнгөж сая'
-  if (m < 60) return `${m}м өмнө`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `${h}ц өмнө`
-  return `${Math.floor(h / 24)}ө өмнө`
-}
-
-export type FeedHandle = {
-  open: () => void
-  close: () => void
-  toggle: () => void
-}
-
-type Props = {
-  onLocate?: (lat: number, lng: number) => void
-  refreshSignal?: number
-}
-
-function PostList({
-  posts,
-  loading,
-  onLocate,
-}: {
-  posts: Post[]
-  loading: boolean
-  onLocate?: (lat: number, lng: number) => void
-}) {
-  if (loading) {
-    return <p className="text-[var(--text-muted)] text-sm text-center py-10">Уншиж байна...</p>
-  }
-  if (posts.length === 0) {
-    return (
-      <p className="text-[var(--text-muted)] text-sm text-center py-10 leading-relaxed">
-        Одоогоор post байхгүй байна.<br />Эхний post-ийг та нийтлээрэй!
-      </p>
-    )
-  }
-  return (
-    <>
-      {posts.map(post => {
-        const meta = TYPE_META[post.post_type ?? 'info'] ?? TYPE_META.info
-        return (
-          <article key={post.id} className="post-card">
-            <div className="px-3 pt-2.5 pb-1 flex items-center justify-between gap-2">
-              <span
-                className="text-[0.68rem] font-semibold px-2 py-0.5 rounded-full shrink-0"
-                style={{ color: meta.color, background: `${meta.color}1a` }}
-              >
-                {meta.label}
-              </span>
-              <span className="text-[0.72rem] text-[var(--text-muted)] shrink-0">{fmt(post.created_at)}</span>
-            </div>
-            {post.title && (
-              <div className="px-3 pb-1.5 font-semibold text-[0.9rem] leading-tight">{post.title}</div>
-            )}
-            {post.media_type === 'video' ? (
-              <video src={post.media_url} controls playsInline className="w-full max-h-[260px] block bg-[#020617]" />
-            ) : (
-              <img src={post.media_url} alt={post.title ?? ''} loading="lazy" className="w-full h-[200px] object-cover block" />
-            )}
-            <div className="px-3 py-2.5 flex flex-col gap-1.5">
-              {post.caption && (
-                <p className="m-0 text-[0.85rem] leading-[1.55] text-[var(--text-sub)]">{post.caption}</p>
-              )}
-              <div className="flex items-center justify-between gap-2">
-                <button className="post-locate-btn" onClick={() => onLocate?.(post.lat, post.lng)}>
-                  <MapPin size={11} />
-                  {post.location_name ?? `${post.lat.toFixed(3)}, ${post.lng.toFixed(3)}`}
-                </button>
-                {post.author && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    <User size={10} className="text-[var(--text-muted)]" />
-                    <div className="text-right">
-                      <div className="text-[0.7rem] font-medium text-[var(--text-sub)] leading-tight">{post.author.name}</div>
-                      {post.author.phone && (
-                        <div className="text-[0.65rem] text-[var(--text-muted)] leading-tight">{post.author.phone}</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </article>
-        )
-      })}
-    </>
-  )
-}
+export type FeedHandle = { open: () => void; close: () => void; toggle: () => void }
+type Props = { onLocate?: (lat: number, lng: number) => void; refreshSignal?: number }
 
 const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSignal }, ref) {
-  const [posts, setPosts] = useState<Post[]>([])
+  const [posts, setPosts]     = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
-  const [isOpen, setIsOpen] = useState(false)
+  const [isMobileOpen, setIsMobileOpen]   = useState(false)
+  const [isDesktopOpen, setIsDesktopOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+  
+  // Mobile Drag State
+  const COLLAPSED_H = 120 // Pixels visible when "down"
+  const [yOffset, setYOffset] = useState(COLLAPSED_H)
+  const [isDragging, setIsDragging] = useState(false)
+  const startPointerY = useRef(0)
+  const startOffset = useRef(0)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -133,37 +33,174 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
     }
   }, [])
 
-  useEffect(() => { void load() }, [load, refreshSignal])
+  useEffect(() => { 
+    setMounted(true)
+    void load() 
+  }, [load, refreshSignal])
+  
+  const isMobile = () => mounted && window.innerWidth < 768
+  const getMaxH = () => mounted ? window.innerHeight : 0
 
   useImperativeHandle(ref, () => ({
-    open:   () => setIsOpen(true),
-    close:  () => setIsOpen(false),
-    toggle: () => setIsOpen(v => !v),
+    open: () => {
+      if (isMobile()) {
+        setIsMobileOpen(true)
+        setYOffset(getMaxH() * 0.5)
+      } else {
+        setIsDesktopOpen(true)
+      }
+    },
+    close: () => {
+      setIsMobileOpen(false)
+      setIsDesktopOpen(false)
+    },
+    toggle: () => {
+      if (isMobile()) {
+        if (!isMobileOpen) {
+          setIsMobileOpen(true)
+          setYOffset(getMaxH() * 0.5)
+        } else {
+          setIsMobileOpen(false)
+        }
+      } else {
+        setIsDesktopOpen(prev => !prev)
+      }
+    },
   }))
 
-  useEffect(() => {
-    const handler = () => setIsOpen(v => !v)
-    window.addEventListener('toggle-feed', handler)
-    return () => window.removeEventListener('toggle-feed', handler)
-  }, [])
+  const onDragStart = (e: React.PointerEvent) => {
+    // @ts-ignore
+    e.target.setPointerCapture(e.pointerId)
+    setIsDragging(true)
+    startPointerY.current = e.clientY
+    startOffset.current = yOffset
+  }
+
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!isDragging) return
+    const diff = startPointerY.current - e.clientY
+    const newY = startOffset.current + diff
+    const max = getMaxH()
+    setYOffset(Math.max(COLLAPSED_H, Math.min(newY, max)))
+  }
+
+  const onDragEnd = () => {
+    setIsDragging(false)
+    const max = getMaxH()
+    if (yOffset > max * 0.75) setYOffset(max)
+    else if (yOffset > max * 0.3) setYOffset(max * 0.5)
+    else setYOffset(COLLAPSED_H)
+  }
+
+  const refreshBtn = (size: number) => (
+    <button
+      className="glass-button"
+      style={{ padding: '0.4rem 0.6rem', minHeight: size }}
+      onClick={(e) => { e.stopPropagation(); void load() }}
+    >
+      <RefreshCw size={13} />
+    </button>
+  )
+
+  const content = loading ? (
+    <p className="text-[var(--text-muted)] text-sm text-center py-10">Ачааллаж байна...</p>
+  ) : posts.length === 0 ? (
+    <p className="text-[var(--text-muted)] text-sm text-center py-10">Мэдээлэл олдсонгүй.</p>
+  ) : (
+    <div className="flex flex-col gap-3">
+      {posts.map(post => <PostCard key={post.id} post={post} onLocate={onLocate} />)}
+    </div>
+  )
+
+  if (!mounted) return null
+  const maxH = getMaxH()
 
   return (
-    <div className={`feed-panel ${isOpen ? 'open' : ''} flex flex-col`}>
-      <div className="flex items-center justify-between px-4 pb-3 shrink-0" style={{ borderBottom: '1px solid var(--color-border-glass)' }}>
-        <span className="font-bold text-base">Feed</span>
-        <button
-          className="glass-button"
-          style={{ padding: '0.4rem 0.6rem', minHeight: 32 }}
-          onClick={load}
-          aria-label="Refresh"
+    <>
+      {/* Mobile Feed Sheet */}
+      <div
+        className={`feed-mobile-panel md:hidden fixed left-0 right-0 z-40 flex flex-col ${isMobileOpen ? 'open' : ''}`}
+        style={{ 
+          bottom: 0, // Align to bottom of screen for full coverage
+          height: `${maxH}px`,
+          background: 'rgba(10,12,18,0.98)',
+          backdropFilter: 'blur(32px)',
+          WebkitBackdropFilter: 'blur(32px)',
+          borderTop: '1px solid var(--border-glass)',
+          borderRadius: yOffset > maxH - 20 ? '0' : '24px 24px 0 0', // Square edges when full screen
+          transform: isMobileOpen 
+            ? `translateY(${maxH - yOffset}px)` 
+            : `translateY(${maxH}px)`,
+          transition: isDragging ? 'none' : 'transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.1), border-radius 0.3s',
+          boxShadow: '0 -10px 40px rgba(0,0,0,0.5)',
+        }}
+      >
+        {/* Drag Area */}
+        <div 
+          className="flex flex-col items-center pt-3 pb-2 shrink-0 select-none touch-none" 
+          style={{ cursor: 'ns-resize' }}
+          onPointerDown={onDragStart}
+          onPointerMove={onDragMove}
+          onPointerUp={onDragEnd}
+          onPointerCancel={onDragEnd}
         >
-          <RefreshCw size={13} />
-        </button>
+          <div className="w-12 h-1.5 bg-white/20 rounded-full mb-3" />
+          <div 
+            className="flex items-center justify-between w-full px-5 transition-opacity duration-300"
+            style={{ 
+              opacity: yOffset < COLLAPSED_H + 50 ? 0 : 1,
+              pointerEvents: yOffset < COLLAPSED_H + 50 ? 'none' : 'auto'
+            }}
+          >
+            <span className="font-bold text-lg">Social Feed</span>
+            <div className="flex items-center gap-2">
+              {refreshBtn(30)}
+              <button 
+                className="glass-button" 
+                onClick={(e) => { e.stopPropagation(); setIsMobileOpen(false) }} 
+                style={{ padding: '0.4rem 0.6rem', minHeight: 30 }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Scrollable Content */}
+        <div 
+          className="overflow-y-auto px-4 py-2" 
+          style={{ 
+            flex: 1, 
+            pointerEvents: isDragging || yOffset < maxH * 0.4 ? 'none' : 'auto',
+            marginBottom: 'var(--nav-h)' // Ensure content isn't hidden behind bottom nav
+          }}
+        >
+          {content}
+        </div>
       </div>
-      <div className="flex-1 overflow-y-auto flex flex-col gap-3 px-3 pt-3 pb-4">
-        <PostList posts={posts} loading={loading} onLocate={onLocate} />
+
+      {/* Desktop Sidebar */}
+      <div
+        className={`hidden md:flex fixed right-0 top-0 z-20 w-[380px] h-screen flex-col ${isDesktopOpen ? 'open' : ''}`}
+        style={{
+          paddingTop: 'calc(var(--header-h) + 1.25rem)',
+          background: 'rgba(8,10,18,0.95)',
+          backdropFilter: 'blur(28px)',
+          WebkitBackdropFilter: 'blur(28px)',
+          borderLeft: '1px solid var(--border-glass)',
+          transform: isDesktopOpen ? 'translateX(0)' : 'translateX(100%)',
+          transition: 'transform 0.45s cubic-bezier(0.16, 1, 0.3, 1)',
+        }}
+      >
+        <div className="flex items-center justify-between px-6 pb-4 shrink-0" style={{ borderBottom: '1px solid var(--border-glass)' }}>
+          <span className="font-bold text-xl">Social Feed</span>
+          {refreshBtn(32)}
+        </div>
+        <div className="overflow-y-auto px-5 pt-4 pb-10" style={{ flex: 1 }}>
+          {content}
+        </div>
       </div>
-    </div>
+    </>
   )
 })
 

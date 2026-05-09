@@ -35,6 +35,8 @@ export default function DashboardShell() {
     const handleToggleCity = () => setActiveOverlay(prev => prev === 'city' ? null : 'city')
     const handleToggleHome = () => setActiveOverlay(prev => prev === 'home' ? null : 'home')
     const handleToggleCitizen = () => setActiveOverlay(prev => prev === 'citizen' ? null : 'citizen')
+    const handleToggleFeed = () => feedRef.current?.toggle()
+    
     const handleUpdateLocation = (e: any) => {
       const { lat, lng } = e.detail
       setCurrentLocation({ lat, lng })
@@ -44,12 +46,14 @@ export default function DashboardShell() {
     window.addEventListener('toggle-city', handleToggleCity)
     window.addEventListener('toggle-home', handleToggleHome)
     window.addEventListener('toggle-citizen', handleToggleCitizen)
+    window.addEventListener('toggle-feed', handleToggleFeed)
     window.addEventListener('update-location', handleUpdateLocation)
 
     return () => {
       window.removeEventListener('toggle-city', handleToggleCity)
       window.removeEventListener('toggle-home', handleToggleHome)
       window.removeEventListener('toggle-citizen', handleToggleCitizen)
+      window.removeEventListener('toggle-feed', handleToggleFeed)
       window.removeEventListener('update-location', handleUpdateLocation)
     }
   }, [])
@@ -127,29 +131,9 @@ export default function DashboardShell() {
 
       {/* Mobile bottom nav */}
       <nav className="bottom-nav">
-        <button className="nav-btn" onClick={() => feedRef.current?.toggle()}>
-          <LayoutGrid size={22} />
-          <span>Feed</span>
-        </button>
-
         <button className="nav-btn nav-upload" onClick={openUpload} aria-label="Нийтлэх">
           <ImagePlus size={22} />
         </button>
-
-        {user ? (
-          <button className="nav-btn" onClick={async () => {
-            const supabase = createClient()
-            await supabase.auth.signOut()
-          }}>
-            <LogOut size={22} />
-            <span>Гарах</span>
-          </button>
-        ) : (
-          <button className="nav-btn" onClick={() => router.push('/auth')}>
-            <User size={22} />
-            <span>Нэвтрэх</span>
-          </button>
-        )}
       </nav>
 
       <UploadModal
