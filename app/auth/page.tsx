@@ -7,22 +7,43 @@ import { ArrowLeft, User } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/lib/auth-context'
 
+function GoogleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 48 48" fill="none">
+      <path d="M47.5 24.5c0-1.6-.1-3.2-.4-4.7H24v8.9h13.2c-.6 3-2.4 5.6-5 7.3v6h8c4.8-4.4 7.3-10.9 7.3-17.5z" fill="#4285F4"/>
+      <path d="M24 48c6.5 0 12-2.1 15.9-5.8l-8-6c-2.1 1.4-4.8 2.2-7.9 2.2-6 0-11.1-4-13-9.5H2.7v6.2C6.6 42.6 14.8 48 24 48z" fill="#34A853"/>
+      <path d="M11 28.9c-.5-1.4-.7-2.9-.7-4.4s.2-3 .7-4.4v-6.2H2.7A23.9 23.9 0 0 0 0 24c0 3.9.9 7.6 2.7 10.9l8.3-6z" fill="#FBBC05"/>
+      <path d="M24 9.5c3.4 0 6.5 1.2 8.9 3.4l6.6-6.6C35.9 2.4 30.4 0 24 0 14.8 0 6.6 5.4 2.7 13.1l8.3 6.2c1.9-5.5 7-9.8 13-9.8z" fill="#EA4335"/>
+    </svg>
+  )
+}
+
 export default function AuthPage() {
   const { user } = useAuth()
   const router = useRouter()
 
   const [isRegister, setIsRegister] = useState(false)
-  const [email, setEmail]     = useState('')
+  const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName]       = useState('')
-  const [phone, setPhone]     = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError]     = useState('')
-  const [message, setMessage] = useState('')
+  const [name, setName]         = useState('')
+  const [phone, setPhone]       = useState('')
+  const [loading, setLoading]   = useState(false)
+  const [googleLoading, setGL]  = useState(false)
+  const [error, setError]       = useState('')
+  const [message, setMessage]   = useState('')
 
   useEffect(() => {
     if (user) router.replace('/dashboard')
   }, [user, router])
+
+  const handleGoogleSignIn = async () => {
+    setGL(true)
+    const supabase = createClient()
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    })
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -41,7 +62,6 @@ export default function AuthPage() {
       if (error) {
         setError(error.message)
       } else if (data.session) {
-        // Immediate sign-in (no email confirmation) — also upsert profile directly
         await supabase.from('profiles').upsert(
           { id: data.user!.id, name: name.trim(), phone: phone.trim() || null },
           { onConflict: 'id' },
@@ -81,6 +101,21 @@ export default function AuthPage() {
             <User size={20} />
             {isRegister ? 'Бүртгүүлэх' : 'Нэвтрэх'}
           </h1>
+        </div>
+
+        {/* Google OAuth */}
+        <button
+          className="glass-button w-full justify-center mb-4"
+          style={{ gap: '0.6rem', minHeight: 44 }}
+          onClick={handleGoogleSignIn}
+          disabled={googleLoading}
+        >
+          <GoogleIcon />
+          Google-ээр {isRegister ? 'бүртгүүлэх' : 'нэвтрэх'}
+        </button>
+
+        <div className="auth-divider">
+          <span>эсвэл имэйлээр</span>
         </div>
 
         <form onSubmit={handleSubmit} className="auth-form">

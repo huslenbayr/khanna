@@ -4,12 +4,13 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from '
 import type { User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 
-type AuthCtx = { user: User | null }
+type AuthCtx = { user: User | null; avatarUrl: string | null }
 
-const Ctx = createContext<AuthCtx>({ user: null })
+const Ctx = createContext<AuthCtx>({ user: null, avatarUrl: null })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const avatarUrl = user?.user_metadata?.avatar_url ?? null
 
   useEffect(() => {
     const sb = createClient()
@@ -20,7 +21,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  return <Ctx.Provider value={{ user }}>{children}</Ctx.Provider>
+  return <Ctx.Provider value={{ user, avatarUrl }}>{children}</Ctx.Provider>
 }
 
 export const useAuth = () => useContext(Ctx)
