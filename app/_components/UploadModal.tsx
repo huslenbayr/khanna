@@ -352,7 +352,7 @@ export default function UploadModal({
         {file && (
           <div className="relative rounded-xl overflow-hidden">
             {isVideo
-              ? <video src={preview} controls playsInline preload="metadata" className="w-full max-h-[240px] block bg-[#020617]" />
+              ? <video key={preview} src={preview} controls playsInline preload="metadata" className="w-full max-h-[240px] block bg-[#020617]" />
               : <img src={preview} alt="" className="w-full max-h-[240px] object-cover block" />
             }
             {isVideo && file.size > VIDEO_COMPRESS_THRESHOLD && (
