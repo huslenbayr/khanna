@@ -4,6 +4,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 're
 import maplibregl from 'maplibre-gl'
 import type {
   FillExtrusionLayerSpecification,
+  GeoJSONSource,
   MapLayerMouseEvent,
   StyleSpecification,
   MapGeoJSONFeature,
@@ -18,12 +19,32 @@ const MAPBOX_BASEMAP_SETTING = process.env.NEXT_PUBLIC_USE_MAPBOX_BASEMAP
 const USE_MAPBOX_BASEMAP = MAPBOX_BASEMAP_SETTING === 'true'
   || (process.env.NODE_ENV === 'development' && MAPBOX_BASEMAP_SETTING !== 'false')
 const MAPBOX_STREETS_SOURCE_ID = 'mapbox-streets'
+const OSM_BUILDINGS_SOURCE_ID = 'osm-buildings'
 const BUILDING_LAYER_ID = '3d-buildings'
+const MAX_FALLBACK_BUILDING_BBOX_SPAN = 0.08
+const FALLBACK_BUILDING_MIN_ZOOM = 15
 
 type FillExtrusionPaint = NonNullable<FillExtrusionLayerSpecification['paint']>
 
 const buildingHeightExpression = ['case', ['has', 'height'], ['to-number', ['get', 'height']], 8] as unknown as FillExtrusionPaint['fill-extrusion-height']
 const buildingBaseExpression = ['case', ['has', 'min_height'], ['to-number', ['get', 'min_height']], 0] as unknown as FillExtrusionPaint['fill-extrusion-base']
+
+type BuildingFeatureCollection = {
+  type: 'FeatureCollection'
+  features: Array<{
+    type: 'Feature'
+    properties: Record<string, unknown>
+    geometry: {
+      type: 'Polygon'
+      coordinates: number[][][]
+    }
+  }>
+}
+
+const EMPTY_BUILDINGS_GEOJSON: BuildingFeatureCollection = {
+  type: 'FeatureCollection',
+  features: [],
+}
 
 type MapComponentProps = {
   reports?: CitizenReport[]
@@ -126,6 +147,32 @@ const add3DBuildings = (targetMap: maplibregl.Map) => {
   return true
 }
 
+const addFallback3DBuildings = (targetMap: maplibregl.Map) => {
+  if (targetMap.getLayer(BUILDING_LAYER_ID)) return true
+
+  if (!targetMap.getSource(OSM_BUILDINGS_SOURCE_ID)) {
+    targetMap.addSource(OSM_BUILDINGS_SOURCE_ID, {
+      type: 'geojson',
+      data: EMPTY_BUILDINGS_GEOJSON,
+    })
+  }
+
+  targetMap.addLayer({
+    id: BUILDING_LAYER_ID,
+    type: 'fill-extrusion',
+    source: OSM_BUILDINGS_SOURCE_ID,
+    minzoom: 14,
+    paint: {
+      'fill-extrusion-color': ['interpolate', ['linear'], buildingHeightExpression, 0, '#38bdf8', 12, '#4ade80', 32, '#f59e0b', 70, '#f43f5e'],
+      'fill-extrusion-height': ['interpolate', ['linear'], ['zoom'], 14, 0, 15.25, buildingHeightExpression],
+      'fill-extrusion-base': buildingBaseExpression,
+      'fill-extrusion-opacity': 0.72,
+    },
+  } as FillExtrusionLayerSpecification)
+
+  return true
+}
+
 const addRoadLayers = (targetMap: maplibregl.Map) => {
   if (!canUseMapboxBasemap() || !targetMap.getSource(MAPBOX_STREETS_SOURCE_ID) || targetMap.getLayer('roads-primary')) return
 
@@ -163,6 +210,10 @@ const isMapboxRequestError = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error)
   return message.includes('api.mapbox.com') || message.includes('mapbox')
 }
+
+const getFallbackBuildingSource = (targetMap: maplibregl.Map) => (
+  targetMap.getSource(OSM_BUILDINGS_SOURCE_ID) as GeoJSONSource | undefined
+)
 
 const createHeightPopupContent = (feature: MapGeoJSONFeature) => {
   const height = Number(feature.properties ? feature.properties.height : 0)
@@ -293,6 +344,9 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
 
     let usingFallbackStyle = false
     let buildingInteractionsBound = false
+    let fallbackBuildingsEnabled = false
+    let lastFallbackBuildingBbox = ''
+    let fallbackBuildingController: AbortController | null = null
 
     const bindBuildingInteractions = () => {
       if (buildingInteractionsBound || !mainMap.getLayer(BUILDING_LAYER_ID)) return
@@ -310,22 +364,90 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
       buildingInteractionsBound = false
     }
 
+    const getFallbackBuildingBbox = () => {
+      const bounds = mainMap.getBounds()
+      const south = Math.max(-90, bounds.getSouth())
+      const west = Math.max(-180, bounds.getWest())
+      const north = Math.min(90, bounds.getNorth())
+      const east = Math.min(180, bounds.getEast())
+
+      if (north - south > MAX_FALLBACK_BUILDING_BBOX_SPAN || east - west > MAX_FALLBACK_BUILDING_BBOX_SPAN) {
+        return null
+      }
+
+      return [south, west, north, east].map(value => value.toFixed(6)).join(',')
+    }
+
+    const loadFallbackBuildings = async () => {
+      if (!fallbackBuildingsEnabled) return
+
+      const source = getFallbackBuildingSource(mainMap)
+      if (!source) return
+
+      if (mainMap.getZoom() < FALLBACK_BUILDING_MIN_ZOOM) {
+        source.setData(EMPTY_BUILDINGS_GEOJSON)
+        return
+      }
+
+      const bbox = getFallbackBuildingBbox()
+      if (!bbox) {
+        source.setData(EMPTY_BUILDINGS_GEOJSON)
+        return
+      }
+
+      if (bbox === lastFallbackBuildingBbox) return
+      lastFallbackBuildingBbox = bbox
+
+      fallbackBuildingController?.abort()
+      const controller = new AbortController()
+      fallbackBuildingController = controller
+
+      try {
+        const response = await fetch(`/api/buildings?bbox=${bbox}`, { signal: controller.signal })
+        if (!response.ok) throw new Error(`Building request failed: ${response.status}`)
+        const data = await response.json() as BuildingFeatureCollection
+        if (!controller.signal.aborted) {
+          getFallbackBuildingSource(mainMap)?.setData(data)
+        }
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          console.warn('Unable to load fallback 3D buildings', error)
+        }
+      }
+    }
+
+    const enableFallbackBuildings = () => {
+      const hasFallbackBuildings = addFallback3DBuildings(mainMap)
+      fallbackBuildingsEnabled = hasFallbackBuildings
+      bindBuildingInteractions()
+      setBuildingsReady(hasFallbackBuildings)
+      void loadFallbackBuildings()
+    }
+
     const handleMapError = (event: { error?: unknown }) => {
       if (usingFallbackStyle || !isMapboxRequestError(event.error)) return
       usingFallbackStyle = true
+      fallbackBuildingsEnabled = false
+      fallbackBuildingController?.abort()
       unbindBuildingInteractions()
       setBuildingsReady(false)
       mainMap.setStyle(createCartoDarkStyle())
+      mainMap.once('style.load', enableFallbackBuildings)
     }
 
     mainMap.on('error', handleMapError)
+    mainMap.on('moveend', loadFallbackBuildings)
 
     mainMap.on('load', () => {
       setReady(true)
       const hasBuildings = add3DBuildings(mainMap)
       addRoadLayers(mainMap)
-      bindBuildingInteractions()
-      setBuildingsReady(hasBuildings)
+      if (hasBuildings) {
+        bindBuildingInteractions()
+        setBuildingsReady(true)
+      } else {
+        enableFallbackBuildings()
+      }
       
       try {
         if (mainMap.dragRotate) mainMap.dragRotate.enable()
@@ -336,7 +458,10 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
 
     return () => {
       clearLP()
+      fallbackBuildingController?.abort()
       mainMap.off('error', handleMapError)
+      mainMap.off('moveend', loadFallbackBuildings)
+      mainMap.off('style.load', enableFallbackBuildings)
       unbindBuildingInteractions()
       mainMap.remove()
       map.current = null
