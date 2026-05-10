@@ -114,9 +114,8 @@ export default function Header() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
       <Link
         href="/search"
-        className="hidden md:flex"
         style={{
-          alignItems: 'center', gap: 6,
+          display: 'flex', alignItems: 'center', gap: 6,
           padding: '0.38rem 0.9rem 0.38rem 0.65rem',
           borderRadius: 20,
           background: 'rgba(255,255,255,0.06)',
