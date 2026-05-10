@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Check, ChevronDown, ChevronUp, Flag,
-  Heart, MapPin, MessageCircle, RefreshCw, Send, Share2, User,
+  Heart, MapPin, MessageCircle, RefreshCw, Send, Share2, Trash2, User,
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 
@@ -30,6 +30,8 @@ export type Post = {
   location_name: string | null
   post_type: string | null
   created_at: string
+  starts_at?: string | null
+  ends_at?: string | null
   author: PostAuthor | null
   comment_count: number
   like_count: number
@@ -41,6 +43,7 @@ export const TYPE_META: Record<string, { label: string; color: string }> = {
   issue:    { label: 'Асуудал',         color: '#f87171' },
   landmark: { label: 'Онцгой газар',   color: '#a78bfa' },
   event:    { label: 'Арга хэмжээ',    color: '#4ade80' },
+  show:     { label: 'Тоглолт/Шоу',    color: '#f472b6' },
   safety:   { label: 'Аюулгүй байдал', color: '#fb923c' },
 }
 
@@ -100,7 +103,7 @@ function CommentsSection({ postId }: { postId: string }) {
   return (
     <div className="comments-section">
       {loading ? (
-        <p className="text-[0.75rem] text-[var(--text-muted)] py-2 text-center">Уншиж байна...</p>
+        <p className="text-[0.75rem] text-[var(--text-muted)] py-4 text-center">Уншиж байна...</p>
       ) : comments.length === 0 ? (
         <p className="text-[0.75rem] text-[var(--text-muted)] py-2 text-center">Сэтгэгдэл байхгүй</p>
       ) : (
@@ -163,9 +166,11 @@ function Caption({ text }: { text: string }) {
 export default function PostCard({
   post,
   onLocate,
+  onDelete,
 }: {
   post: Post
   onLocate?: (lat: number, lng: number) => void
+  onDelete?: (id: string) => void
 }) {
   const { user } = useAuth()
   const router   = useRouter()
@@ -180,6 +185,22 @@ export default function PostCard({
   const [copied, setCopied]         = useState(false)
 
   const guard = () => { if (!user) { router.push('/auth'); return false }; return true }
+
+  const handleDelete = async () => {
+    if (!confirm('Энэ постыг устгах уу?')) return
+    try {
+      const res = await fetch(`/api/posts/${post.id}`, { method: 'DELETE' })
+      if (res.ok) {
+        if (onDelete) onDelete(post.id)
+        else router.push('/map')
+      } else {
+        const errData = await res.json().catch(() => ({}))
+        alert(`Устгахад алдаа гарлаа: ${errData.error || res.statusText}`)
+      }
+    } catch (err) {
+      alert('Сүлжээний алдаа гарлаа. Дахин оролдоно уу.')
+    }
+  }
 
   const toggleLike = async () => {
     if (!guard()) return
@@ -211,14 +232,19 @@ export default function PostCard({
   return (
     <article className="post-card">
       {/* Type + time */}
-      <div className="px-3 pt-2.5 pb-1 flex items-center gap-2">
+      <div className="px-3 pt-2.5 pb-1 flex items-center gap-2 flex-wrap">
         <span
           className="text-[0.68rem] font-semibold px-2 py-0.5 rounded-full shrink-0"
           style={{ color: meta.color, background: `${meta.color}1a` }}
         >
           {meta.label}
         </span>
-        <span className="text-[0.72rem] text-[var(--text-muted)] ml-auto shrink-0">
+        {post.ends_at && (
+          <span suppressHydrationWarning className="text-[0.65rem] px-1.5 py-0.5 rounded-full shrink-0" style={{ color: '#f59e0b', background: 'rgba(245,158,11,0.12)' }}>
+            ⏱ {new Date(post.ends_at).toLocaleString('mn-MN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
+        <span suppressHydrationWarning className="text-[0.72rem] text-[var(--text-muted)] ml-auto shrink-0">
           {fmtRelative(post.created_at)}
         </span>
       </div>
@@ -297,8 +323,22 @@ export default function PostCard({
           {copied && <span className="text-[0.7rem]">Хуулсан!</span>}
         </button>
 
+        {/* Delete (own posts only) */}
+        {user?.id === post.user_id && (
+          <button
+            className="flex items-center transition-colors ml-auto"
+            style={{ color: 'var(--text-muted)' }}
+            onClick={() => void handleDelete()}
+            title="Устгах"
+            onMouseEnter={e => (e.currentTarget.style.color = '#f87171')}
+            onMouseLeave={e => (e.currentTarget.style.color = 'var(--text-muted)')}
+          >
+            <Trash2 size={14} />
+          </button>
+        )}
+
         {/* Report */}
-        <div className="relative ml-auto">
+        <div className={`relative ${user?.id === post.user_id ? '' : 'ml-auto'}`}>
           <button
             className="flex items-center transition-colors"
             style={{ color: reported ? '#f87171' : 'var(--text-muted)' }}

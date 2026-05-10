@@ -24,9 +24,11 @@ export async function GET(request: Request) {
     if (likedPostIds.length === 0) return NextResponse.json([])
   }
 
+  const now = new Date().toISOString()
   let query = supabase
     .from('posts')
     .select('*')
+    .or(`ends_at.is.null,ends_at.gt.${now}`)
     .order('created_at', { ascending: false })
     .limit(50)
 
@@ -109,6 +111,8 @@ export async function POST(request: Request) {
     lat: number
     lng: number
     location_name: string | null
+    starts_at: string | null
+    ends_at: string | null
   }
 
   const { data, error } = await supabase
@@ -122,6 +126,8 @@ export async function POST(request: Request) {
       lat:           body.lat,
       lng:           body.lng,
       location_name: body.location_name,
+      starts_at:     body.starts_at ?? null,
+      ends_at:       body.ends_at   ?? null,
       user_id:       user.id,
     })
     .select()
