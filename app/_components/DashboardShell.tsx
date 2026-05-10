@@ -128,7 +128,7 @@ export default function DashboardShell() {
   const selectedReport = reports.find(r => r.id === selectedReportId) || null
 
   return (
-    <div className="dashboard-shell h-screen overflow-hidden relative">
+    <div className="dashboard-shell fixed inset-0 h-[100dvh] w-full overflow-hidden">
       <div className="absolute inset-0 z-0">
         <MapComponent
           ref={mapRef}

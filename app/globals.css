@@ -26,7 +26,15 @@
 
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
-  html { height: 100%; -webkit-text-size-adjust: 100%; }
+  html, body { 
+    height: 100%; 
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; 
+    position: fixed;
+    -webkit-text-size-adjust: 100%; 
+  }
 
   /* Backward-compat aliases so existing inline styles don't break */
   :root {
@@ -60,7 +68,6 @@
     font-family: var(--font-sans);
     background: var(--color-bg-dark);
     color: var(--color-text-main);
-    min-height: 100%;
     overscroll-behavior: none;
     -webkit-font-smoothing: antialiased;
     -webkit-tap-highlight-color: transparent;
