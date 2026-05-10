@@ -1,10 +1,9 @@
 'use client'
 
-import { forwardRef, useEffect, useImperativeHandle, useRef, useState, useCallback } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import maplibregl from 'maplibre-gl'
 import type {
   FillExtrusionLayerSpecification,
-  SymbolLayerSpecification,
   MapLayerMouseEvent,
   StyleSpecification,
   MapGeoJSONFeature,
@@ -15,12 +14,16 @@ import type { CitizenReport, ReportCategory, ReportCoordinates, ReportStatus } f
 import type { CommunityMember, CommunityStatus } from '../_types/community'
 
 const MAPBOX_ACCESS_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_ACCESS_TOKEN
-const CARTO_DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json'
+const MAPBOX_BASEMAP_SETTING = process.env.NEXT_PUBLIC_USE_MAPBOX_BASEMAP
+const USE_MAPBOX_BASEMAP = MAPBOX_BASEMAP_SETTING === 'true'
+  || (process.env.NODE_ENV === 'development' && MAPBOX_BASEMAP_SETTING !== 'false')
 const MAPBOX_STREETS_SOURCE_ID = 'mapbox-streets'
 const BUILDING_LAYER_ID = '3d-buildings'
 
-const buildingHeightExpression: any = ['case', ['has', 'height'], ['to-number', ['get', 'height']], 8]
-const buildingBaseExpression: any = ['case', ['has', 'min_height'], ['to-number', ['get', 'min_height']], 0]
+type FillExtrusionPaint = NonNullable<FillExtrusionLayerSpecification['paint']>
+
+const buildingHeightExpression = ['case', ['has', 'height'], ['to-number', ['get', 'height']], 8] as unknown as FillExtrusionPaint['fill-extrusion-height']
+const buildingBaseExpression = ['case', ['has', 'min_height'], ['to-number', ['get', 'min_height']], 0] as unknown as FillExtrusionPaint['fill-extrusion-base']
 
 type MapComponentProps = {
   reports?: CitizenReport[]
@@ -68,13 +71,27 @@ const communityStatusColor: Record<CommunityStatus, string> = {
   'Хамт байна': '#3b82f6',
 }
 
-const createBaseMapStyle = (): string | StyleSpecification => {
-  if (!MAPBOX_ACCESS_TOKEN) {
-    console.warn("Mapbox Token олдоогүй тул CartoDB-ийн стиль ашиглаж байна.");
-    return CARTO_DARK_STYLE;
+const createCartoDarkStyle = (): StyleSpecification => ({
+  version: 8,
+  sources: {
+    carto: {
+      type: 'raster',
+      tiles: ['https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    },
+  },
+  layers: [{ id: 'carto-dark', type: 'raster', source: 'carto' }],
+})
+
+const canUseMapboxBasemap = () => Boolean(MAPBOX_ACCESS_TOKEN && USE_MAPBOX_BASEMAP)
+
+const createBaseMapStyle = (): StyleSpecification => {
+  if (!canUseMapboxBasemap()) {
+    return createCartoDarkStyle()
   }
   
-  // Хэрэв токен байгаа ч ажиллахгүй байвал Mapbox-ийн dashboard дээр 
+  // Хэрэв токен байгаа ч ажиллахгүй байвал Mapbox-ийн dashboard дээр
   // domain restriction тохиргоог шалгана уу.
   return {
     version: 8,
@@ -84,11 +101,12 @@ const createBaseMapStyle = (): string | StyleSpecification => {
       [MAPBOX_STREETS_SOURCE_ID]: { type: 'vector', tiles: [`https://api.mapbox.com/v4/mapbox.mapbox-streets-v8/{z}/{x}/{y}.mvt?access_token=${MAPBOX_ACCESS_TOKEN}`], minzoom: 0, maxzoom: 16 }
     },
     layers: [{ id: 'mapbox', type: 'raster', source: 'mapbox' }]
-  } as StyleSpecification
+  }
 }
 
 const add3DBuildings = (targetMap: maplibregl.Map) => {
-  if (!MAPBOX_ACCESS_TOKEN || targetMap.getLayer(BUILDING_LAYER_ID)) return
+  if (!canUseMapboxBasemap() || !targetMap.getSource(MAPBOX_STREETS_SOURCE_ID)) return false
+  if (targetMap.getLayer(BUILDING_LAYER_ID)) return true
 
   targetMap.addLayer({
     id: BUILDING_LAYER_ID,
@@ -104,10 +122,14 @@ const add3DBuildings = (targetMap: maplibregl.Map) => {
       'fill-extrusion-opacity': 0.86
     }
   } as FillExtrusionLayerSpecification)
+
+  return true
 }
 
 const addRoadLayers = (targetMap: maplibregl.Map) => {
-  if (!MAPBOX_ACCESS_TOKEN || targetMap.getLayer('roads-primary')) return
+  if (!canUseMapboxBasemap() || !targetMap.getSource(MAPBOX_STREETS_SOURCE_ID) || targetMap.getLayer('roads-primary')) return
+
+  const beforeLayerId = targetMap.getLayer(BUILDING_LAYER_ID) ? BUILDING_LAYER_ID : undefined
 
   // Замын үндсэн шугам (Subtle blue stroke)
   targetMap.addLayer({
@@ -120,7 +142,7 @@ const addRoadLayers = (targetMap: maplibregl.Map) => {
       'line-color': ['interpolate', ['linear'], ['zoom'], 14, 'rgba(56, 189, 248, 0.1)', 16, 'rgba(56, 189, 248, 0.25)'],
       'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 16, 2],
     }
-  }, BUILDING_LAYER_ID)
+  }, beforeLayerId)
 
   // Гол замуудын гэрэлтэх эффект (Neon glow for major roads)
   targetMap.addLayer({
@@ -135,6 +157,11 @@ const addRoadLayers = (targetMap: maplibregl.Map) => {
       'line-blur': ['interpolate', ['linear'], ['zoom'], 14, 0, 16, 3]
     }
   }, 'roads-primary')
+}
+
+const isMapboxRequestError = (error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes('api.mapbox.com') || message.includes('mapbox')
 }
 
 const createHeightPopupContent = (feature: MapGeoJSONFeature) => {
@@ -264,14 +291,41 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
     const handleBuildingEnter = () => { mainMap.getCanvas().style.cursor = 'pointer' }
     const handleBuildingLeave = () => { mainMap.getCanvas().style.cursor = '' }
 
-    mainMap.on('load', () => {
-      setReady(true)
-      add3DBuildings(mainMap)
-      addRoadLayers(mainMap)
+    let usingFallbackStyle = false
+    let buildingInteractionsBound = false
+
+    const bindBuildingInteractions = () => {
+      if (buildingInteractionsBound || !mainMap.getLayer(BUILDING_LAYER_ID)) return
       mainMap.on('click', BUILDING_LAYER_ID, handleBuildingClick)
       mainMap.on('mouseenter', BUILDING_LAYER_ID, handleBuildingEnter)
       mainMap.on('mouseleave', BUILDING_LAYER_ID, handleBuildingLeave)
-      setBuildingsReady(true)
+      buildingInteractionsBound = true
+    }
+
+    const unbindBuildingInteractions = () => {
+      if (!buildingInteractionsBound) return
+      mainMap.off('click', BUILDING_LAYER_ID, handleBuildingClick)
+      mainMap.off('mouseenter', BUILDING_LAYER_ID, handleBuildingEnter)
+      mainMap.off('mouseleave', BUILDING_LAYER_ID, handleBuildingLeave)
+      buildingInteractionsBound = false
+    }
+
+    const handleMapError = (event: { error?: unknown }) => {
+      if (usingFallbackStyle || !isMapboxRequestError(event.error)) return
+      usingFallbackStyle = true
+      unbindBuildingInteractions()
+      setBuildingsReady(false)
+      mainMap.setStyle(createCartoDarkStyle())
+    }
+
+    mainMap.on('error', handleMapError)
+
+    mainMap.on('load', () => {
+      setReady(true)
+      const hasBuildings = add3DBuildings(mainMap)
+      addRoadLayers(mainMap)
+      bindBuildingInteractions()
+      setBuildingsReady(hasBuildings)
       
       try {
         if (mainMap.dragRotate) mainMap.dragRotate.enable()
@@ -282,6 +336,8 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
 
     return () => {
       clearLP()
+      mainMap.off('error', handleMapError)
+      unbindBuildingInteractions()
       mainMap.remove()
       map.current = null
     }
