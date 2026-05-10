@@ -69,7 +69,8 @@ export default function Header() {
     <header
       className="fixed top-0 left-0 right-0 z-30 flex items-center justify-between px-4 md:px-6"
       style={{
-        height: 'var(--header-h)',
+        height: 'var(--header-total-h)',
+        paddingTop: 'env(safe-area-inset-top, 0px)',
         background: 'var(--header-bg)',
         backdropFilter: 'blur(24px)',
         WebkitBackdropFilter: 'blur(24px)',
@@ -113,8 +114,9 @@ export default function Header() {
       <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
       <Link
         href="/search"
+        className="hidden md:flex"
         style={{
-          display: 'flex', alignItems: 'center', gap: 6,
+          alignItems: 'center', gap: 6,
           padding: '0.38rem 0.9rem 0.38rem 0.65rem',
           borderRadius: 20,
           background: 'rgba(255,255,255,0.06)',

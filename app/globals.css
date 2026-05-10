@@ -47,11 +47,13 @@
     --header-bg: rgba(10, 12, 18, 0.95);
     --header-h: 56px;
     --nav-h: 64px;
+    --header-total-h: calc(var(--header-h) + env(safe-area-inset-top, 0px));
+    --nav-total-h: calc(var(--nav-h) + env(safe-area-inset-bottom, 0px));
     /* Mobile sheet: use svh (excludes browser chrome) with vh fallback */
-    --sheet-full-h: calc(100vh - var(--header-h) - var(--nav-h));
+    --sheet-full-h: calc(100vh - var(--header-total-h) - var(--nav-total-h));
   }
   @supports (height: 1svh) {
-    :root { --sheet-full-h: calc(100svh - var(--header-h) - var(--nav-h)); }
+    :root { --sheet-full-h: calc(100svh - var(--header-total-h) - var(--nav-total-h)); }
   }
 
   body {
@@ -145,7 +147,7 @@
     position: fixed;
     bottom: 0; left: 0; right: 0;
     z-index: 60;
-    height: var(--spacing-nav-h);
+    height: var(--nav-total-h);
     padding-bottom: env(safe-area-inset-bottom, 0px);
     align-items: center;
     justify-content: space-around;
@@ -220,11 +222,11 @@
     position: fixed;
     top: 0; left: 0; right: 0;
     z-index: 60;
-    height: var(--spacing-header-h);
+    height: var(--header-total-h);
+    padding: env(safe-area-inset-top, 0px) 1rem 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 1rem;
     background: rgba(8, 10, 18, 0.7);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
@@ -529,7 +531,7 @@
   /* ── City Info overlay (responsive) ── */
   .city-info-overlay {
     position: absolute;
-    top: calc(var(--header-h) + 0.75rem);
+    top: calc(var(--header-total-h) + 0.75rem);
     right: 1.25rem;
     width: 520px;
     max-height: calc(100vh - var(--header-h) - 2rem);
@@ -543,10 +545,10 @@
   @media (max-width: 767px) {
     .city-info-overlay {
       position: fixed;
-      top: var(--header-h);
+      top: var(--header-total-h);
       left: 0;
       right: 0;
-      bottom: var(--nav-h);
+      bottom: var(--nav-total-h);
       width: 100%;
       max-height: none;
       border-radius: 0 !important;
@@ -559,9 +561,9 @@
   /* Ensure map canvas captures all touch gestures */
   .maplibregl-canvas-container { touch-action: none !important; }
   /* Position nav control below the site header */
-  .maplibregl-ctrl-top-left { top: calc(var(--header-h) + 0.75rem) !important; left: 0.75rem !important; }
+  .maplibregl-ctrl-top-left { top: calc(var(--header-total-h) + 0.75rem) !important; left: 0.75rem !important; }
   .maplibregl-ctrl-top-right {
-    top: calc(var(--header-h) + 0.75rem) !important;
+    top: calc(var(--header-total-h) + 0.75rem) !important;
     right: var(--ctrl-right, 0.75rem) !important;
     transition: right 0.45s cubic-bezier(0.16, 1, 0.3, 1);
   }
@@ -617,7 +619,7 @@
     position: absolute;
     z-index: 10;
     right: 0.75rem;
-    bottom: calc(var(--mobile-feed-y, var(--nav-h)) + 16px);
+    bottom: calc(var(--mobile-feed-y, var(--nav-total-h)) + 16px);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;

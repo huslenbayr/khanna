@@ -25,7 +25,7 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
   const [mounted, setMounted] = useState(false)
 
   // Mobile: always visible, height controlled by yOffset
-  const COLLAPSED_H = 120
+  const COLLAPSED_H = 70
   const [yOffset, setYOffset] = useState(COLLAPSED_H)
   const [isDragging, setIsDragging] = useState(false)
   const startPointerY = useRef(0)
@@ -52,7 +52,7 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
 
   useEffect(() => {
     if (!mounted) return
-    document.documentElement.style.setProperty('--mobile-feed-y', `${yOffset}px`)
+    document.documentElement.style.setProperty('--mobile-feed-y', `calc(var(--nav-total-h) + ${yOffset}px)`)
   }, [yOffset, mounted])
 
   const isMobile = () => mounted && window.innerWidth < 768
@@ -148,7 +148,7 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
       <div
         className="feed-mobile-panel md:hidden fixed left-0 right-0 z-50 flex flex-col pointer-events-none"
         style={{
-          bottom: 0,
+          bottom: 'var(--nav-total-h)',
           height: `${yOffset}px`,
           background: 'rgba(10,12,18,0.98)',
           backdropFilter: 'blur(32px)',
@@ -187,7 +187,7 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
           style={{ 
             flex: 1,
             pointerEvents: isDragging || yOffset <= COLLAPSED_H ? 'none' : 'auto',
-            paddingBottom: 'calc(var(--nav-h) + env(safe-area-inset-bottom, 0px) + 20px)',
+            paddingBottom: '20px',
             touchAction: 'pan-y'
           }}
         >
