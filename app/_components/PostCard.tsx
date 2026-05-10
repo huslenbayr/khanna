@@ -280,7 +280,7 @@ export default function PostCard({
       {/* Media */}
       {post.media_url ? (
         post.media_type === 'video' ? (
-          <video src={post.media_url} controls playsInline preload="metadata" className="w-full max-h-[280px] block bg-[#020617]" />
+          <video src={post.media_url} controls playsInline webkit-playsinline="true" preload="metadata" className="w-full max-h-[280px] block bg-[#020617]" />
         ) : (
           <img src={post.media_url} alt={post.title ?? ''} loading="lazy" className="w-full max-h-[280px] object-cover block" />
         )

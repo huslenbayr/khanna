@@ -61,7 +61,7 @@ function PostResultCard({ p }: { p: PostResult }) {
       {/* Thumbnail */}
       <div className="w-16 h-16 rounded-lg overflow-hidden shrink-0 bg-[#020617]">
         {p.media_type === 'video' ? (
-          <video src={p.media_url} className="w-full h-full object-cover" muted />
+          <video src={p.media_url} className="w-full h-full object-cover" muted playsInline preload="metadata" />
         ) : (
           <img src={p.media_url} alt={p.title ?? ''} className="w-full h-full object-cover" />
         )}
