@@ -162,6 +162,7 @@
     backdrop-filter: blur(24px);
     -webkit-backdrop-filter: blur(24px);
     border-top: 1px solid var(--color-border-glass);
+    touch-action: none;
   }
   .nav-btn {
     display: flex;
@@ -238,6 +239,7 @@
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
     border-bottom: 1px solid var(--color-border-glass);
+    touch-action: none;
   }
   .site-header-logo {
     font-size: 1.15rem;
@@ -626,7 +628,7 @@
     position: absolute;
     z-index: 10;
     right: 0.75rem;
-    bottom: calc(var(--mobile-feed-y, var(--nav-total-h)) + 16px);
+    bottom: calc(var(--mobile-feed-y, var(--nav-total-h)) + 40px);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
