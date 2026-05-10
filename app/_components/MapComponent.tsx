@@ -9,7 +9,7 @@ import type {
   StyleSpecification,
   MapGeoJSONFeature,
 } from 'maplibre-gl'
-import { Locate } from 'lucide-react'
+import { Locate, Wrench } from 'lucide-react'
 import { type Post, TYPE_META } from './PostCard'
 import type { CitizenReport, ReportCategory, ReportCoordinates, ReportStatus } from '../_types/citizenReport'
 import type { CommunityMember, CommunityStatus } from '../_types/community'
@@ -58,11 +58,14 @@ type MapComponentProps = {
   mapPosts?: Post[]
   onLongPress?: (lat: number, lng: number) => void
   onPostSelect?: (postId: string) => void | Promise<void>
+  onRoadSelect?: (roadId: string, roadName: string, lat: number, lng: number) => void
 }
 
 export type MapHandle = {
   flyTo: (lat: number, lng: number) => void
   clearSelection: () => void
+  calculateRoute: (destLat: number, destLng: number) => Promise<void>
+  clearRoute: () => void
 }
 
 const POST_TYPE_EMOJI: Record<string, string> = {
@@ -204,6 +207,34 @@ const addRoadLayers = (targetMap: maplibregl.Map) => {
       'line-blur': ['interpolate', ['linear'], ['zoom'], 14, 0, 16, 3]
     }
   }, 'roads-primary')
+
+  // Inspect layers
+  targetMap.addLayer({
+    id: 'roads-inspect-glow',
+    type: 'line',
+    source: MAPBOX_STREETS_SOURCE_ID,
+    'source-layer': 'road',
+    filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'], true, false],
+    paint: {
+      'line-color': '#22c55e',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 10, 18, 14],
+      'line-opacity': 0,
+      'line-blur': 3
+    }
+  })
+  targetMap.addLayer({
+    id: 'roads-inspect-query',
+    type: 'line',
+    source: MAPBOX_STREETS_SOURCE_ID,
+    'source-layer': 'road',
+    filter: ['match', ['get', 'class'], ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'], true, false],
+    paint: {
+      'line-color': '#22c55e',
+      'line-width': ['interpolate', ['linear'], ['zoom'], 10, 2, 14, 4, 18, 6],
+      'line-opacity': 0,
+      'line-blur': 0.5
+    }
+  })
 }
 
 const isMapboxRequestError = (error: unknown) => {
@@ -242,6 +273,7 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
   mapPosts = [],
   onLongPress,
   onPostSelect,
+  onRoadSelect,
 }, ref) => {
   const mapContainer = useRef<HTMLDivElement | null>(null)
   const map = useRef<maplibregl.Map | null>(null)
@@ -252,15 +284,66 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
   const onCommunityMemberSelectRef = useRef(onCommunityMemberSelect)
   const onLongPressRef = useRef(onLongPress)
   const onPostSelectRef = useRef(onPostSelect)
+  const onRoadSelectRef = useRef(onRoadSelect)
   const postMarkers = useRef<maplibregl.Marker[]>([])
   const selectionMarker = useRef<maplibregl.Marker | null>(null)
   const [ready, setReady] = useState(false)
   const [buildingsReady, setBuildingsReady] = useState(false)
   const [mapMode, setMapMode] = useState<'3d' | '2d'>('3d')
+  const [roadConditionsActive, setRoadConditionsActive] = useState(false)
 
   useImperativeHandle(ref, () => ({
     flyTo: (lat, lng) => map.current?.flyTo({ center: [lng, lat], zoom: 17, pitch: 60, duration: 1200 }),
-    clearSelection: () => { selectionMarker.current?.remove(); selectionMarker.current = null }
+    clearSelection: () => { selectionMarker.current?.remove(); selectionMarker.current = null },
+    calculateRoute: async (destLat: number, destLng: number) => {
+      if (!currentLocation || !MAPBOX_ACCESS_TOKEN || !map.current) {
+        alert(!currentLocation ? 'Та эхлээд байршлаа идэвхжүүлнэ үү (GPS)' : 'Mapbox тохиргоо дутуу байна')
+        return
+      }
+      try {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${currentLocation.lng},${currentLocation.lat};${destLng},${destLat}?geometries=geojson&access_token=${MAPBOX_ACCESS_TOKEN}`
+        const response = await fetch(url)
+        const data = await response.json()
+        
+        if (data.code === 'Ok' && data.routes && data.routes[0]) {
+          const coordinates = data.routes[0].geometry.coordinates
+          const ROUTE_SOURCE_ID = 'active-route'
+          const ROUTE_LAYER_ID = 'active-route-layer'
+          
+          if (map.current.getLayer(ROUTE_LAYER_ID)) map.current.removeLayer(ROUTE_LAYER_ID)
+          if (map.current.getSource(ROUTE_SOURCE_ID)) map.current.removeSource(ROUTE_SOURCE_ID)
+          
+          map.current.addSource(ROUTE_SOURCE_ID, {
+            type: 'geojson',
+            data: { type: 'Feature', geometry: { type: 'LineString', coordinates } }
+          })
+          
+          map.current.addLayer({
+            id: ROUTE_LAYER_ID,
+            type: 'line',
+            source: ROUTE_SOURCE_ID,
+            paint: {
+              'line-color': '#22c55e',
+              'line-width': 5,
+              'line-opacity': 0.9,
+              'line-blur': 0.5
+            }
+          })
+          
+          const bounds = new maplibregl.LngLatBounds()
+          coordinates.forEach((coord: [number, number]) => bounds.extend(coord))
+          map.current.fitBounds(bounds, { padding: 50, duration: 1000 })
+        }
+      } catch (err) {
+        console.error('Route calculation failed:', err)
+      }
+    },
+    clearRoute: () => {
+      const ROUTE_SOURCE_ID = 'active-route'
+      const ROUTE_LAYER_ID = 'active-route-layer'
+      if (map.current?.getLayer(ROUTE_LAYER_ID)) map.current.removeLayer(ROUTE_LAYER_ID)
+      if (map.current?.getSource(ROUTE_SOURCE_ID)) map.current.removeSource(ROUTE_SOURCE_ID)
+    }
   }))
 
   useEffect(() => {
@@ -268,7 +351,8 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
     onCommunityMemberSelectRef.current = onCommunityMemberSelect
     onLongPressRef.current = onLongPress
     onPostSelectRef.current = onPostSelect
-  }, [onReportSelect, onCommunityMemberSelect, onLongPress, onPostSelect])
+    onRoadSelectRef.current = onRoadSelect
+  }, [onReportSelect, onCommunityMemberSelect, onLongPress, onPostSelect, onRoadSelect])
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(min-width: 768px)')
@@ -468,6 +552,46 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
     }
   }, [])
 
+  useEffect(() => {
+    if (!ready || !map.current) return
+    const opacityQuery = roadConditionsActive ? 0.75 : 0
+    const opacityGlow = roadConditionsActive ? 0.3 : 0
+    if (map.current.getLayer('roads-inspect-query')) map.current.setPaintProperty('roads-inspect-query', 'line-opacity', opacityQuery)
+    if (map.current.getLayer('roads-inspect-glow')) map.current.setPaintProperty('roads-inspect-glow', 'line-opacity', opacityGlow)
+  }, [roadConditionsActive, ready])
+
+  useEffect(() => {
+    if (!ready || !map.current || !roadConditionsActive) return
+
+    const handleRoadClick = (e: MapLayerMouseEvent) => {
+      const features = map.current?.queryRenderedFeatures(e.point, { layers: ['roads-inspect-query'] })
+      const roadFeature = features?.[0]
+      if (roadFeature?.properties) {
+        const props = roadFeature.properties
+        const roadName = props.name || props.name_en || 'Нэргүй зам'
+        const roadId = props.id || `road_${Math.floor(Math.random() * 10000)}`
+        onRoadSelectRef.current?.(roadId, roadName, e.lngLat.lat, e.lngLat.lng)
+      }
+    }
+    
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!map.current || !roadConditionsActive) return
+      const rect = map.current.getCanvas().getBoundingClientRect()
+      const point = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      const features = map.current.queryRenderedFeatures(point, { layers: ['roads-inspect-query'] })
+      map.current.getCanvas().style.cursor = features.length > 0 ? 'pointer' : ''
+    }
+    
+    map.current.on('click', 'roads-inspect-query', handleRoadClick)
+    map.current.on('mousemove', handleMouseMove)
+    
+    return () => {
+      map.current?.off('click', 'roads-inspect-query', handleRoadClick)
+      map.current?.off('mousemove', handleMouseMove)
+      if (map.current) map.current.getCanvas().style.cursor = ''
+    }
+  }, [ready, roadConditionsActive])
+
   const switchMapMode = () => {
     if (!map.current) return
     const nextMode = mapMode === '3d' ? '2d' : '3d'
@@ -551,6 +675,21 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
 
       {/* Permanent bottom-right controls: 2D/3D toggle + GPS */}
       <div className="map-bottom-controls">
+        <button
+          type="button"
+          className="glass-button"
+          onClick={() => setRoadConditionsActive(!roadConditionsActive)}
+          title={roadConditionsActive ? 'Замын мэдээлэл хаах' : 'Замын мэдээлэл харах'}
+          style={{ 
+            opacity: 1, 
+            background: roadConditionsActive ? 'rgba(34, 197, 94, 0.2)' : undefined,
+            borderColor: roadConditionsActive ? 'var(--primary)' : undefined,
+            color: roadConditionsActive ? 'var(--primary)' : undefined,
+            boxShadow: roadConditionsActive ? '0 0 10px rgba(34, 197, 94, 0.4)' : undefined
+          }}
+        >
+          <Wrench size={16} />
+        </button>
         <button
           type="button"
           className="glass-button"

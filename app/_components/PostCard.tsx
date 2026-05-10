@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
   Check, ChevronDown, ChevronUp, Flag,
-  Heart, MapPin, MessageCircle, RefreshCw, Send, Share2, Trash2, User,
+  Heart, MapPin, MessageCircle, RefreshCw, Send, Share2, Trash2, User, Navigation, Ban
 } from 'lucide-react'
 import { useAuth } from '@/lib/auth-context'
 
@@ -167,10 +167,14 @@ export default function PostCard({
   post,
   onLocate,
   onDelete,
+  onGetMeThere,
+  isActiveRoute,
 }: {
   post: Post
   onLocate?: (lat: number, lng: number) => void
   onDelete?: (id: string) => void
+  onGetMeThere?: (postId: string, lat: number, lng: number) => void
+  isActiveRoute?: boolean
 }) {
   const { user } = useAuth()
   const router   = useRouter()
@@ -274,20 +278,30 @@ export default function PostCard({
       )}
 
       {/* Media */}
-      {post.media_type === 'video' ? (
-        <video src={post.media_url} controls playsInline className="w-full max-h-[280px] block bg-[#020617]" />
-      ) : (
-        <img src={post.media_url} alt={post.title ?? ''} loading="lazy" className="w-full max-h-[280px] object-cover block" />
-      )}
+      {post.media_url ? (
+        post.media_type === 'video' ? (
+          <video src={post.media_url} controls playsInline preload="metadata" className="w-full max-h-[280px] block bg-[#020617]" />
+        ) : (
+          <img src={post.media_url} alt={post.title ?? ''} loading="lazy" className="w-full max-h-[280px] object-cover block" />
+        )
+      ) : null}
 
       {/* Caption */}
       {post.caption && <Caption text={post.caption} />}
 
       {/* Location */}
-      <div className="px-3 pt-2 pb-0">
+      <div className="px-3 pt-2 pb-0 flex items-center justify-between">
         <button className="post-locate-btn" onClick={() => onLocate?.(post.lat, post.lng)}>
           <MapPin size={11} />
           {post.location_name ?? `${post.lat.toFixed(3)}, ${post.lng.toFixed(3)}`}
+        </button>
+        <button 
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[0.75rem] font-medium transition-all border ${isActiveRoute ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/20' : 'bg-green-500/10 text-green-400 hover:bg-green-500/20 border-green-500/20'}`}
+          onClick={() => onGetMeThere?.(post.id, post.lat, post.lng)}
+          title={isActiveRoute ? "Цуцлах" : "Энд очих"}
+        >
+          {isActiveRoute ? <Ban size={12} /> : <Navigation size={12} />}
+          {isActiveRoute ? "Цуцлах" : "Очих"}
         </button>
       </div>
 

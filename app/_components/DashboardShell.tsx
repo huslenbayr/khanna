@@ -13,12 +13,14 @@ import { useAuth } from '@/lib/auth-context'
 import type { CitizenReport } from '../_types/citizenReport'
 import type { CommunityMember } from '../_types/community'
 import type { ReportCoordinates } from '../_types/citizenReport'
+import { fetchReportsForSegment, convertRoadReportsToPosts } from '@/lib/road-api'
 
 export default function DashboardShell() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [feedRefresh, setFeedRefresh] = useState(0)
   const [activeOverlay, setActiveOverlay] = useState<string | null>(null)
   const [feedDesktopOpen, setFeedDesktopOpen] = useState(false)
+  const [activeRouteId, setActiveRouteId] = useState<string | null>(null)
 
   const [reports, setReports] = useState<CitizenReport[]>([])
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
@@ -28,6 +30,8 @@ export default function DashboardShell() {
   const [mapPosts, setMapPosts] = useState<Post[]>([])
   const [selectedPostId, setSelectedPostId] = useState<string | null>(null)
   const [longPressLocation, setLongPressLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [overridePosts, setOverridePosts] = useState<Post[] | null>(null)
+  const [overrideTitle, setOverrideTitle] = useState<string | null>(null)
 
   const mapRef = useRef<MapHandle>(null)
   const feedRef = useRef<FeedHandle>(null)
@@ -70,6 +74,8 @@ export default function DashboardShell() {
   }
 
   const handlePostSelect = (id: string) => {
+    setOverridePosts(null)
+    setOverrideTitle(null)
     setSelectedPostId(id)
     feedRef.current?.open()
   }
@@ -88,6 +94,29 @@ export default function DashboardShell() {
     if (!user) { router.push('/auth'); return }
     setLongPressLocation({ lat, lng })
     setUploadOpen(true)
+  }
+
+  const handleGetMeThere = (postId: string, lat: number, lng: number) => {
+    if (activeRouteId === postId) {
+      mapRef.current?.clearRoute()
+      setActiveRouteId(null)
+    } else {
+      feedRef.current?.close()
+      setActiveRouteId(postId)
+      mapRef.current?.calculateRoute(lat, lng)
+    }
+  }
+
+  const handleRoadSelect = async (roadId: string, roadName: string, lat: number, lng: number) => {
+    try {
+      const data = await fetchReportsForSegment(roadId, lat, lng, roadName)
+      const converted = convertRoadReportsToPosts(data.reports, lat, lng, roadName)
+      setOverridePosts(converted)
+      setOverrideTitle(roadName ? `${roadName} - Мэдээлэл` : 'Замын мэдээлэл')
+      feedRef.current?.open()
+    } catch (err) {
+      console.error(err)
+    }
   }
 
   const openUpload = () => {
@@ -114,6 +143,7 @@ export default function DashboardShell() {
           mapPosts={mapPosts}
           onLongPress={handleLongPress}
           onPostSelect={handlePostSelect}
+          onRoadSelect={handleRoadSelect}
         />
       </div>
 
@@ -123,8 +153,16 @@ export default function DashboardShell() {
         refreshSignal={feedRefresh} 
         onDesktopOpenChange={setFeedDesktopOpen}
         selectedPostId={selectedPostId}
-        onClearSelection={() => setSelectedPostId(null)}
+        onClearSelection={() => {
+          setSelectedPostId(null)
+          setOverridePosts(null)
+          setOverrideTitle(null)
+        }}
         onDeletePost={handleDeleted}
+        onGetMeThere={handleGetMeThere}
+        activeRouteId={activeRouteId}
+        overridePosts={overridePosts}
+        overrideTitle={overrideTitle}
       />
 
       {activeOverlay === 'home' && (

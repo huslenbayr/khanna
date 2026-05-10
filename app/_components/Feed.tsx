@@ -12,9 +12,13 @@ type Props = {
   selectedPostId?: string | null;
   onClearSelection?: () => void;
   onDeletePost?: () => void;
+  onGetMeThere?: (postId: string, lat: number, lng: number) => void;
+  activeRouteId?: string | null;
+  overridePosts?: Post[] | null;
+  overrideTitle?: string | null;
 }
 
-const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSignal, onDesktopOpenChange, selectedPostId, onClearSelection, onDeletePost }, ref) {
+const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSignal, onDesktopOpenChange, selectedPostId, onClearSelection, onDeletePost, onGetMeThere, activeRouteId, overridePosts, overrideTitle }, ref) {
   const [posts, setPosts] = useState<Post[]>([])
   const [loading, setLoading] = useState(true)
   const [isDesktopOpen, setIsDesktopOpen] = useState(false)
@@ -69,9 +73,11 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
     },
   }))
 
-  const displayedPosts = selectedPostId 
+  const displayedPosts = overridePosts || (selectedPostId 
     ? posts.filter(p => p.id === selectedPostId)
-    : posts
+    : posts)
+
+  const titleText = overrideTitle || 'Нэгдсэн мэдээллийн хэсэг'
 
   const onDragStart = (e: React.PointerEvent) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -105,8 +111,8 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
 
   const content = loading ? (
     <p className="text-[var(--text-muted)] text-sm text-center py-10">Ачааллаж байна...</p>
-  ) : posts.length === 0 ? (
-    <p className="text-[var(--text-muted)] text-sm text-center py-10">Мэдээлэл олдсонгүй.</p>
+  ) : displayedPosts.length === 0 ? (
+    <p className="text-[var(--text-muted)] text-sm text-center py-10">nothing interesting yet</p>
   ) : (
     <div className="flex flex-col gap-3">
       {selectedPostId && (
@@ -117,14 +123,13 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
           </button>
         </div>
       )}
-      {displayedPosts.length === 0 && selectedPostId && (
-        <p className="text-center py-10 text-sm text-[var(--text-muted)]">Мэдээлэл олдсонгүй.</p>
-      )}
       {displayedPosts.map(post => (
         <PostCard
           key={post.id}
           post={post}
           onLocate={onLocate}
+          onGetMeThere={onGetMeThere}
+          isActiveRoute={activeRouteId === post.id}
           onDelete={id => {
             setPosts(prev => prev.filter(p => p.id !== id))
             onDeletePost?.()
@@ -167,7 +172,7 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
             className="flex items-center justify-between w-full px-5 transition-opacity duration-300"
             style={{ opacity: yOffset < COLLAPSED_H + 50 ? 0 : 1, pointerEvents: yOffset < COLLAPSED_H + 50 ? 'none' : 'auto' }}
           >
-            <span className="font-bold text-lg">Нэгдсэн мэдээллийн хэсэг</span>
+            <span className="font-bold text-lg truncate max-w-[70%]">{titleText}</span>
             <div className="flex items-center gap-2">
               {refreshBtn(30)}
               <button className="glass-button" onClick={e => { e.stopPropagation(); setYOffset(COLLAPSED_H) }} style={{ padding: '0.4rem 0.6rem', minHeight: 30 }}>
@@ -245,7 +250,7 @@ const Feed = forwardRef<FeedHandle, Props>(function Feed({ onLocate, refreshSign
         }}
       >
         <div className="flex items-center justify-between px-6 pb-4 shrink-0" style={{ borderBottom: '1px solid var(--border-glass)' }}>
-          <span className="font-bold text-xl">Нэгдсэн мэдээллийн хэсэг</span>
+          <span className="font-bold text-xl truncate max-w-[70%]">{titleText}</span>
           <div className="flex items-center gap-2">
             {refreshBtn(32)}
             <button className="glass-button" onClick={() => setIsDesktopOpen(false)} style={{ padding: '0.4rem 0.6rem', minHeight: 32 }}>
