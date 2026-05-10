@@ -9,6 +9,8 @@ export interface RoadReport {
   type: 'accident' | 'roadwork' | 'traffic_jam' | 'hazard' | 'other'
   timestamp: Date
   reportedBy?: string
+  lat?: number
+  lng?: number
 }
 
 export interface RoadSegmentData {

@@ -315,7 +315,7 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
           
           map.current.addSource(ROUTE_SOURCE_ID, {
             type: 'geojson',
-            data: { type: 'Feature', geometry: { type: 'LineString', coordinates } }
+            data: { type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: {} }
           })
           
           map.current.addLayer({
@@ -577,7 +577,7 @@ const MapComponent = forwardRef<MapHandle, MapComponentProps>(({
     const handleMouseMove = (e: MouseEvent) => {
       if (!map.current || !roadConditionsActive) return
       const rect = map.current.getCanvas().getBoundingClientRect()
-      const point = { x: e.clientX - rect.left, y: e.clientY - rect.top }
+      const point = [e.clientX - rect.left, e.clientY - rect.top] as [number, number]
       const features = map.current.queryRenderedFeatures(point, { layers: ['roads-inspect-query'] })
       map.current.getCanvas().style.cursor = features.length > 0 ? 'pointer' : ''
     }
